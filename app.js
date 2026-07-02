@@ -82,6 +82,7 @@ app.use("/api", require("./api/result"));
 app.use("/api/fee-setup", require("./api/feeSetup"));
 app.use("/api", require("./api/account/v1"));
 app.use("/api", require("./api/transaction/v1"));
+app.use("/api", require("./api/sms/v1"));
 app.use("/api", require("./api/book/v1"));
 app.use("/api", require("./api/bookIssue/v1"));
 app.use("/api", require("./api/certificate/v1"));

@@ -9,12 +9,12 @@ const mongoConnect = require(`${root}/services/mongo-connect`);
 // Joi Schemas
 const studentAttendanceSchema = Joi.object({
   class_id: Joi.string().required(),
-  section_id: Joi.string().required(),
+  section_id: Joi.string(),
   date: Joi.date().required(), // YYYY-MM-DD or timestamp
   records: Joi.array().items(
     Joi.object({
       student_id: Joi.string().required(),
-      status: Joi.string().valid("Present", "Absent", "Late", "Excused").required(),
+      status: Joi.string().valid("Present", "Absent", "Late", "Excused", "Leave").required(),
       remarks: Joi.string().allow("")
     })
   ).min(1).required(),

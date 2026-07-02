@@ -133,6 +133,38 @@ const authController = {
     } finally {
       // client.close();
     }
+  },
+
+  me: async (req, res) => {
+    const { db } = await mongoConnect();
+    try {
+      const user = await db.collection("users").findOne({ _id: new ObjectId(req.user.userId) });
+      if (!user) {
+        return res.status(404).json({ success: false, message: "User not found" });
+      }
+
+      let madrasa = null;
+      if (user.madrasa_id) {
+        madrasa = await db.collection("madrasas").findOne({ _id: new ObjectId(user.madrasa_id) });
+      }
+
+      res.status(200).json({
+        success: true,
+        data: {
+          user: {
+            _id: user._id,
+            username: user.username,
+            role: user.role,
+            madrasa_id: user.madrasa_id,
+            madrasa_slug: madrasa ? madrasa.slug : ""
+          },
+          madrasa
+        }
+      });
+    } catch (error) {
+      console.error("Get Profile Error:", error);
+      res.status(500).json({ success: false, message: "Internal server error" });
+    }
   }
 };
 

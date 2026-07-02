@@ -184,9 +184,28 @@ const getStudentById = async (req, res) => {
 const createStudent = async (req, res) => {
   const { db, client } = await mongoConnect();
   try {
+    const madrasaId = req.user.madrasa_id ? new ObjectId(req.user.madrasa_id) : null;
+    
+    if (madrasaId) {
+      const madrasa = await db.collection("madrasas").findOne({ _id: madrasaId });
+      if (!madrasa) {
+        return res.status(404).json({ success: false, message: "Madrasa not found." });
+      }
+
+      const planLimit = madrasa.subscription?.studentLimit || 150;
+      const currentStudentsCount = await db.collection("students").countDocuments({ madrasa_id: madrasaId });
+
+      if (currentStudentsCount >= planLimit) {
+        return res.status(403).json({
+          success: false,
+          message: `Subscription capacity limit exceeded! Your current plan allows up to ${planLimit} students. You currently have ${currentStudentsCount} registered. Please contact Super Admin to upgrade your subscription.`
+        });
+      }
+    }
+
     const studentData = {
       ...req.body,
-      madrasa_id: req.user.madrasa_id ? new ObjectId(req.user.madrasa_id) : null,
+      madrasa_id: madrasaId,
       guardian_id: new ObjectId(req.body.guardian_id),
       created_at: Date.now(),
       updated_at: Date.now()

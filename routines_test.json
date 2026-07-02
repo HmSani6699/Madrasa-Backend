@@ -1,0 +1,27 @@
+[
+  {
+    "_id": "699b55df42b998aa4220d9f4",
+    "day": "Saturday",
+    "class_id": "699a942d86fdf709f6216580",
+    "madrasa_id": "6999aeab61186e953421b2e1",
+    "section_id": "699a92a686fdf709f621657f",
+    "created_at": 1771787743710,
+    "periods": [
+      {
+        "startTime": "18:18",
+        "endTime": "07:20",
+        "subject_id": "699b38737b53ff79f9a76dde",
+        "teacher_id": "6999de13b1b20421349c8026",
+        "roomNumber": "101"
+      },
+      {
+        "startTime": "04:19",
+        "endTime": "03:17",
+        "subject_id": "699b38737b53ff79f9a76dde",
+        "teacher_id": "6999de13b1b20421349c8026",
+        "roomNumber": "101"
+      }
+    ],
+    "updated_at": 1771787743710
+  }
+]

@@ -12,11 +12,25 @@ const mongoOptions = {
 
 const getMongoConnection = async () => {
     try {
+        const mongoDbUri = process.env.MONGO_DB_URI;
+        if (!mongoDbUri) {
+            throw new Error("MONGO_DB_URI is not defined in environment variables");
+        }
         const dbName = process.env.MONGO_DB ;
         const client = new MongoClient(mongoDbUri, mongoOptions);
         await client.connect();
         const db = client.db(dbName);
-        return ({ client, db })
+        
+        // Check if it's a replica set (required for transactions)
+        let isReplicaSet = false;
+        try {
+            const status = await db.admin().serverStatus();
+            isReplicaSet = !!status.repl;
+        } catch (e) {
+            console.log("Could not detect replica set status, assuming standalone.");
+        }
+
+        return ({ client, db, isReplicaSet })
     } catch (error) {
         console.error("MongoDB Connection Error:", error);
         throw error;

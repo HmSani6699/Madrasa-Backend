@@ -56,18 +56,34 @@ const admissionSchema = Joi.object({
   ).min(1).required()
 });
 
-// Create new admission (Transaction: Guardian -> Students)
+// Create new admission (No transaction - standalone MongoDB compatible)
 const createAdmission = async (req, res) => {
-  let session = null;
   try {
-    const { db, client } = await mongoConnect();
-    session = client.startSession();
-    session.startTransaction();
+    const { db } = await mongoConnect();
     
     const payload = req.body;
     const madrasaId = req.user.madrasa_id ? new ObjectId(req.user.madrasa_id) : null;
     let guardianId = null;
     let guardianUserId = null;
+
+    // Enforce student limit based on subscription plan capacity
+    if (madrasaId) {
+      const madrasa = await db.collection("madrasas").findOne({ _id: madrasaId });
+      if (!madrasa) {
+        return res.status(404).json({ success: false, message: "Madrasa not found." });
+      }
+
+      const planLimit = madrasa.subscription?.studentLimit || 150;
+      const currentStudentsCount = await db.collection("students").countDocuments({ madrasa_id: madrasaId });
+      const newStudentsCount = payload.students ? payload.students.length : 0;
+
+      if (currentStudentsCount + newStudentsCount > planLimit) {
+        return res.status(403).json({
+          success: false,
+          message: `Subscription capacity limit exceeded! Your current plan allows up to ${planLimit} students. You currently have ${currentStudentsCount} registered, and you tried to add ${newStudentsCount}. Please contact Super Admin to upgrade your subscription.`
+        });
+      }
+    }
 
     // 1. Check if Guardian exists by guardian_id OR contact number and madrasa_id
     let existingGuardian = null;
@@ -75,14 +91,14 @@ const createAdmission = async (req, res) => {
       existingGuardian = await db.collection("parents").findOne({ 
         _id: new ObjectId(payload.guardian_id), 
         madrasa_id: madrasaId 
-      }, { session });
+      });
     }
 
     if (!existingGuardian) {
       existingGuardian = await db.collection("parents").findOne({ 
         contact: payload.guardian.contact, 
         madrasa_id: madrasaId 
-      }, { session });
+      });
     }
 
     if (existingGuardian) {
@@ -90,26 +106,24 @@ const createAdmission = async (req, res) => {
       guardianUserId = existingGuardian.userId;
       
       // Only update existing guardian details if an explicit guardian_id wasn't provided
-      // (meaning they were entering new details that happened to match an existing contact)
       if (!payload.guardian_id) {
         await db.collection("parents").updateOne(
           { _id: guardianId },
-          { $set: { ...payload.guardian, updated_at: Date.now() } },
-          { session }
+          { $set: { ...payload.guardian, updated_at: Date.now() } }
         );
       }
     } else {
       // Create User for Guardian
-      const guardianPassword = await authService.hashPassword(payload.guardian.contact); // Default password = contact
+      const guardianPassword = await authService.hashPassword(payload.guardian.contact);
       const guardianUser = await db.collection("users").insertOne({
-        username: payload.guardian.contact, // Mobile as username
-        email: payload.guardian.email || "", // Optional
+        username: payload.guardian.contact,
+        email: payload.guardian.email || "",
         password: guardianPassword,
         role: "parent",
         madrasa_id: madrasaId,
         created_at: Date.now(),
         updated_at: Date.now()
-      }, { session });
+      });
       
       guardianUserId = guardianUser.insertedId;
 
@@ -122,11 +136,11 @@ const createAdmission = async (req, res) => {
         updated_at: Date.now()
       };
       
-      const newGuardian = await db.collection("parents").insertOne(guardianData, { session });
+      const newGuardian = await db.collection("parents").insertOne(guardianData);
       guardianId = newGuardian.insertedId;
       
       // Link user back to profile
-      await db.collection("users").updateOne({ _id: guardianUserId }, { $set: { reference_id: guardianId } }, { session });
+      await db.collection("users").updateOne({ _id: guardianUserId }, { $set: { reference_id: guardianId } });
     }
 
     // 2. Create Students
@@ -149,7 +163,7 @@ const createAdmission = async (req, res) => {
             madrasa_id: madrasaId,
             created_at: Date.now(),
             updated_at: Date.now()
-        }, { session });
+        });
 
         const studentDoc = {
             ...studentData,
@@ -160,7 +174,6 @@ const createAdmission = async (req, res) => {
             admissionDate: payload.admissionDate,
             admissionStatus: "Active",
             roll_number: student.roll_number || "",
-            // Use class_id and section_id from payload if available, else null
             class_id: student.class_id || null,
             section_id: student.section_id || null,
             created_at: Date.now(),
@@ -171,19 +184,16 @@ const createAdmission = async (req, res) => {
         studentUserUpdates.push({ userId: studentUser.insertedId, username, password: studentPasswordRaw });
     }
 
-    const studentsResult = await db.collection("students").insertMany(studentDocs, { session });
+    const studentsResult = await db.collection("students").insertMany(studentDocs);
     const studentIds = Object.values(studentsResult.insertedIds);
 
     // Update Users with reference_ids
     for (let i = 0; i < studentIds.length; i++) {
         await db.collection("users").updateOne(
             { _id: studentUserUpdates[i].userId },
-            { $set: { reference_id: studentIds[i] } },
-            { session }
+            { $set: { reference_id: studentIds[i] } }
         );
     }
-
-    await session.commitTransaction();
     
     res.status(201).json({ 
         success: true, 
@@ -196,8 +206,7 @@ const createAdmission = async (req, res) => {
     });
 
   } catch (error) {
-    if (session && session.inTransaction()) await session.abortTransaction();
-    console.error("Admission Transaction Error:", error);
+    console.error("Admission Error:", error);
     
     // Better handling for RangeError/BSON size issues
     if (error.name === 'RangeError' || error.message.includes('OUT_OF_RANGE') || error.message.includes('BSON')) {
@@ -209,18 +218,13 @@ const createAdmission = async (req, res) => {
     }
 
     res.status(500).json({ success: false, message: error.message });
-  } finally {
-    if (session) session.endSession();
   }
 };
 
-// Update existing admission (Update Guardian & specific Student)
+// Update existing admission (No transaction - standalone MongoDB compatible)
 const updateAdmission = async (req, res) => {
-    let session = null;
     try {
-        const { db, client } = await mongoConnect();
-        session = client.startSession();
-        session.startTransaction();
+        const { db } = await mongoConnect();
         const payload = req.body;
         const madrasaId = req.user.madrasa_id ? new ObjectId(req.user.madrasa_id) : null;
         const guardianId = payload.guardianId ? new ObjectId(payload.guardianId) : null;
@@ -231,8 +235,7 @@ const updateAdmission = async (req, res) => {
         if (payload.guardian) {
             await db.collection("parents").updateOne(
                 { _id: guardianId, madrasa_id: madrasaId },
-                { $set: { ...payload.guardian, updated_at: Date.now() } },
-                { session }
+                { $set: { ...payload.guardian, updated_at: Date.now() } }
             );
         }
 
@@ -243,20 +246,15 @@ const updateAdmission = async (req, res) => {
                     const { _id, userId, ...updateData } = student;
                     await db.collection("students").updateOne(
                         { _id: new ObjectId(_id), madrasa_id: madrasaId },
-                        { $set: { ...updateData, updated_at: Date.now() } },
-                        { session }
+                        { $set: { ...updateData, updated_at: Date.now() } }
                     );
                 }
             }
         }
 
-        await session.commitTransaction();
         res.status(200).json({ success: true, message: "Admission updated successfully" });
     } catch (error) {
-        if (session && session.inTransaction()) await session.abortTransaction();
         res.status(500).json({ success: false, message: error.message });
-    } finally {
-        if (session) session.endSession();
     }
 };
 
@@ -270,6 +268,20 @@ const getAdmissions = async (req, res) => {
         if (req.query.class_id) query.class_id = req.query.class_id;
         if (req.query.section_id) query.section_id = req.query.section_id;
         if (req.query.academicYear) query.academicYear = req.query.academicYear;
+        if (req.query.gender) query.gender = req.query.gender;
+        if (req.query.bloodGroup) query.bloodGroup = req.query.bloodGroup;
+        if (req.query.religion) query.religion = req.query.religion;
+
+        if (req.query.startDate && req.query.endDate) {
+            query.admissionDate = {
+                $gte: req.query.startDate,
+                $lte: req.query.endDate
+            };
+        } else if (req.query.startDate) {
+            query.admissionDate = { $gte: req.query.startDate };
+        } else if (req.query.endDate) {
+            query.admissionDate = { $lte: req.query.endDate };
+        }
 
         if (req.query.search) {
             query.$or = [
@@ -365,7 +377,7 @@ const getOnlineAdmissions = async (req, res) => {
 
         const [data, total] = await Promise.all([
             db.collection("online_admissions").find({ madrasa_id: madrasaId })
-                .sort({ created_at: -1 })
+                .sort({ created_at: 1 })
                 .skip((page - 1) * limit)
                 .limit(limit)
                 .toArray(),
@@ -392,42 +404,29 @@ const getOnlineAdmissionById = async (req, res) => {
 };
 
 const updateOnlineAdmissionStatus = async (req, res) => {
-    let session = null;
     try {
-        const { db, client } = await mongoConnect();
-        session = client.startSession();
+        const { db } = await mongoConnect();
         const { id } = req.params;
         const { status } = req.body;
         const madrasaId = req.user.madrasa_id ? new ObjectId(req.user.madrasa_id) : null;
-        
-        session.startTransaction();
 
-        // 1. Update status in online_admissions
+        // Update status in online_admissions
         const updateResult = await db.collection("online_admissions").findOneAndUpdate(
             { _id: new ObjectId(id), madrasa_id: madrasaId },
             { $set: { status, updated_at: new Date() } },
-            { session, returnDocument: "after" }
+            { returnDocument: "after" }
         );
 
-        const application = updateResult.value || updateResult; // Handle different mongo driver versions
+        const application = updateResult.value || updateResult;
 
         if (!application) {
-            await session.abortTransaction();
             return res.status(404).json({ success: false, message: "Application not found" });
         }
 
-        // 2. Status updated successfully. The student/parent creation is now handled
-        // manually via the official admission form (auto-filled) to allow for
-        // principal review and completion of remaining fields.
-
-        await session.commitTransaction();
         res.status(200).json({ success: true, message: `Application ${status} and processed` });
     } catch (error) {
-        if (session && session.inTransaction()) await session.abortTransaction();
         console.error("Update Status Error:", error);
         res.status(500).json({ success: false, message: error.message });
-    } finally {
-        if (session) session.endSession();
     }
 };
 
