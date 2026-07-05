@@ -47,7 +47,7 @@ const getDesignationById = async (req, res) => {
   try {
     const madrasaId = req.user.madrasa_id ? new ObjectId(req.user.madrasa_id) : null;
     
-    const designation = await mongo.fetchOne(db, "designations", { _id: req.params.id });
+    const designation = await mongo.fetchOne(db, "designations", { _id: new ObjectId(req.params.id) });
     if (!designation) {
       return res.status(404).json({ success: false, message: "Designation not found" });
     }
@@ -103,7 +103,7 @@ const updateDesignation = async (req, res) => {
     const madrasaId = req.user.madrasa_id ? new ObjectId(req.user.madrasa_id) : null;
     
     // Multi-tenant validation - check designation exists and belongs to same madrasa
-    const existingDesignation = await mongo.fetchOne(db, "designations", { _id: req.params.id });
+    const existingDesignation = await mongo.fetchOne(db, "designations", { _id: new ObjectId(req.params.id) });
     if (!existingDesignation) {
       return res.status(404).json({ success: false, message: "Designation not found" });
     }
@@ -117,7 +117,7 @@ const updateDesignation = async (req, res) => {
     const result = await mongo.updateData(
       db,
       "designations",
-      { _id: req.params.id },
+      { _id: new ObjectId(req.params.id) },
       {
         $set: {
           ...req.body,
@@ -146,7 +146,7 @@ const deleteDesignation = async (req, res) => {
     const madrasaId = req.user.madrasa_id ? new ObjectId(req.user.madrasa_id) : null;
     
     // Multi-tenant validation - check designation exists and belongs to same madrasa
-    const existingDesignation = await mongo.fetchOne(db, "designations", { _id: req.params.id });
+    const existingDesignation = await mongo.fetchOne(db, "designations", { _id: new ObjectId(req.params.id) });
     if (!existingDesignation) {
       return res.status(404).json({ success: false, message: "Designation not found" });
     }
@@ -157,7 +157,7 @@ const deleteDesignation = async (req, res) => {
       }
     }
     
-    const result = await mongo.deleteData(db, "designations", { _id: req.params.id });
+    const result = await mongo.deleteData(db, "designations", { _id: new ObjectId(req.params.id) });
     
     if (!result) {
       return res.status(404).json({ success: false, message: "Designation not found" });

@@ -25,11 +25,8 @@ const salarySetupSchema = Joi.object({
 // Create new salary setup
 const createSalarySetup = async (req, res) => {
   const { db, client } = await mongoConnect();
-  const session = client.startSession();
   
   try {
-    session.startTransaction();
-    
     const payload = req.body;
     const madrasaId = req.user.madrasa_id ? new ObjectId(req.user.madrasa_id) : null;
     
@@ -38,7 +35,7 @@ const createSalarySetup = async (req, res) => {
     }
     
     // Validate staff exists and belongs to same madrasa
-    const staff = await mongo.fetchOne(db, "staff", { _id: payload.staff_id });
+    const staff = await mongo.fetchOne(db, "staff", { _id: new ObjectId(payload.staff_id) });
     if (!staff) {
       throw new Error("Staff not found");
     }
@@ -68,8 +65,7 @@ const createSalarySetup = async (req, res) => {
           status: "inactive",
           updated_at: Date.now()
         } 
-      },
-      { session }
+      }
     );
     
     // Create new salary setup
@@ -88,9 +84,7 @@ const createSalarySetup = async (req, res) => {
       updated_at: Date.now()
     };
     
-    const newSetup = await db.collection("salary_setups").insertOne(salarySetupData, { session });
-    
-    await session.commitTransaction();
+    const newSetup = await db.collection("salary_setups").insertOne(salarySetupData);
     
     res.status(201).json({ 
       success: true, 
@@ -102,11 +96,9 @@ const createSalarySetup = async (req, res) => {
     });
     
   } catch (error) {
-    await session.abortTransaction();
     console.error("Salary Setup Creation Error:", error);
     res.status(500).json({ success: false, message: error.message });
   } finally {
-    session.endSession();
     // await // client.close();
   }
 };

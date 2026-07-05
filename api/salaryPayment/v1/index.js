@@ -38,7 +38,7 @@ const createSalaryPayment = async (req, res) => {
     }
     
     // Validate staff exists and belongs to same madrasa
-    const staff = await mongo.fetchOne(db, "staff", { _id: payload.staff_id });
+    const staff = await mongo.fetchOne(db, "staff", { _id: new ObjectId(payload.staff_id) });
     if (!staff) {
       return res.status(404).json({ success: false, message: "Staff not found" });
     }

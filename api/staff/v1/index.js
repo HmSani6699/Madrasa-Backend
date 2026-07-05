@@ -14,6 +14,7 @@ const mongoConnect = require(`${root}/services/mongo-connect`);
 // Joi Schema for Staff Payload
 const staffSchema = Joi.object({
   // Academic/Job Details
+  employeeID: Joi.string().required(),
   role: Joi.string().required(),
   joinDate: Joi.date().required(),
   designation: Joi.string().required(),
@@ -64,16 +65,13 @@ const staffSchema = Joi.object({
   }).optional()
 });
 
-// Create new staff (Transaction: Create User -> Create Staff Profile)
+// Create new staff
 const createStaff = async (req, res) => {
-  let client, session, db;
+  let client, db;
   try {
     const connection = await mongoConnect();
     db = connection.db;
     client = connection.client;
-    session = client.startSession();
-    
-    session.startTransaction();
     
     const payload = req.body;
     const madrasaId = req.user.madrasa_id ? new ObjectId(req.user.madrasa_id) : null;
@@ -82,7 +80,7 @@ const createStaff = async (req, res) => {
     let userId = null;
     if (payload.email && payload.password) {
         // Check if user exists
-        const existingUser = await db.collection("users").findOne({ email: payload.email }, { session });
+        const existingUser = await db.collection("users").findOne({ email: payload.email });
         if (existingUser) {
             throw new Error("User with this email already exists");
         }
@@ -97,18 +95,19 @@ const createStaff = async (req, res) => {
             reference_id: null, // Will update after creating staff profile
             created_at: Date.now(),
             updated_at: Date.now()
-        }, { session });
+        });
         
         userId = newUser.insertedId;
     }
 
     // 2. Create Staff Profile
     const staffData = {
+        employeeID: payload.employeeID,
         userId: userId,
         madrasa_id: madrasaId,
         name: payload.name,
         role: payload.role,
-        designation: payload.designation, // Should be ID/String depending on frontend. Schema says string
+        designation: payload.designation,
         department: payload.department,
         joinDate: payload.joinDate,
         qualification: payload.qualification,
@@ -140,18 +139,15 @@ const createStaff = async (req, res) => {
         updated_at: Date.now()
     };
 
-    const newStaff = await db.collection("staff").insertOne(staffData, { session });
+    const newStaff = await db.collection("staff").insertOne(staffData);
     
     // Update user with reference_id if user was created
     if (userId) {
         await db.collection("users").updateOne(
             { _id: userId },
-            { $set: { reference_id: newStaff.insertedId } },
-            { session }
+            { $set: { reference_id: newStaff.insertedId } }
         );
     }
-
-    await session.commitTransaction();
     
     res.status(201).json({ 
         success: true, 
@@ -163,17 +159,11 @@ const createStaff = async (req, res) => {
     });
 
   } catch (error) {
-    if (session && session.transaction.isActive) {
-        await session.abortTransaction();
-    }
     console.error("Staff Creation Error:", error);
     res.status(500).json({ success: false, message: error.message });
   } finally {
-    if (session) {
-        await session.endSession();
-    }
     if (client) {
-        // await // client.close();
+        // await client.close();
     }
   }
 };
@@ -199,6 +189,7 @@ const updateStaff = async (req, res) => {
     
     // Prepare update object
     const updateFields = {
+        employeeID: payload.employeeID,
         name: payload.name,
         role: payload.role,
         designation: payload.designation,
