@@ -88,6 +88,7 @@ app.use("/api", require("./api/bookIssue/v1"));
 app.use("/api", require("./api/certificate/v1"));
 app.use("/api", require("./api/salarySetup"));
 app.use("/api", require("./api/salaryPayment"));
+app.use("/api/payroll/v1", require("./api/payroll/v1"));
 app.use("/api", require("./api/class-assign"));
 app.use("/api", require("./api/ClassSyllabus"));
 app.use("/api/fee-type", require("./api/FeeType"));
