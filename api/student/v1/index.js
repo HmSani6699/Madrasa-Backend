@@ -54,9 +54,15 @@ const getAllStudents = async (req, res) => {
     const madrasaId = req.user.madrasa_id ? new ObjectId(req.user.madrasa_id) : null;
     const query = { madrasa_id: madrasaId };
     
-    // Exact match filters - backend expects string IDs from frontend dropdowns
-    if (req.query.class_id && req.query.class_id !== 'all') query.class_id = req.query.class_id;
-    if (req.query.section_id && req.query.section_id !== 'all') query.section_id = req.query.section_id;
+    // Exact match filters - backend expects string IDs from frontend dropdowns, but handle ObjectIds just in case
+    if (req.query.class_id && req.query.class_id !== 'all') {
+        const classIdObj = ObjectId.isValid(req.query.class_id) ? new ObjectId(req.query.class_id) : req.query.class_id;
+        query.class_id = { $in: [req.query.class_id, classIdObj] };
+    }
+    if (req.query.section_id && req.query.section_id !== 'all') {
+        const sectionIdObj = ObjectId.isValid(req.query.section_id) ? new ObjectId(req.query.section_id) : req.query.section_id;
+        query.section_id = { $in: [req.query.section_id, sectionIdObj] };
+    }
     if (req.query.guardian_id) query.guardian_id = new ObjectId(req.query.guardian_id);
     if (req.query.status) query.admissionStatus = req.query.status;
     if (req.query.academicYear) query.academicYear = req.query.academicYear;

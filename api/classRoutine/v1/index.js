@@ -16,9 +16,11 @@ const safeObjectId = (id) => {
 
 // Joi Schema
 const routineSchema = Joi.object({
+  routine_id: Joi.string().allow(null, "").optional(),
   class_id: Joi.string().required(),
   section_id: Joi.string().required(),
   day: Joi.string().valid("Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Saturdy").required(),
+  overwrite: Joi.boolean().optional(),
   periods: Joi.array().items(
       Joi.object({
           startTime: Joi.string().required(), // HH:mm
@@ -34,32 +36,40 @@ const routineSchema = Joi.object({
 const createOrUpdateRoutine = async (req, res) => {
   const { db, client } = await mongoConnect();
   try {
-    const { class_id, section_id, day, periods } = req.body;
+    const { routine_id, class_id, section_id, day, periods, overwrite } = req.body;
     
     if (!class_id || !section_id || !day || !periods || !periods.length) {
         return res.status(400).json({ success: false, message: "Missing required fields" });
     }
 
-    const query = { 
-        class_id, // Stored as string in this collection based on previous patterns
-        section_id, 
-        day, 
-        madrasa_id: req.user.madrasa_id 
-    };
+    const madrasaQuery = { $in: [req.user.madrasa_id, safeObjectId(req.user.madrasa_id)].filter(Boolean) };
+
+    const query = routine_id ? 
+        { _id: safeObjectId(routine_id), madrasa_id: madrasaQuery } : 
+        { 
+            class_id: { $in: [class_id, safeObjectId(class_id)].filter(Boolean) },
+            section_id: { $in: [section_id, safeObjectId(section_id)].filter(Boolean) },
+            day, 
+            madrasa_id: madrasaQuery 
+        };
     
     // Fetch existing routine
     const existing = await db.collection("class_routines").findOne(query);
     
-    let updatedPeriods = existing ? [...existing.periods] : [];
+    let updatedPeriods = existing && !overwrite ? [...existing.periods] : [];
 
-    for (let newPeriod of periods) {
-        // Find if a period already exists at this time
-        const index = updatedPeriods.findIndex(p => p.startTime === newPeriod.startTime);
-        if (index > -1) {
-            updatedPeriods[index] = { ...updatedPeriods[index], ...newPeriod };
-        } else {
-            updatedPeriods.push(newPeriod);
+    if (!overwrite) {
+        for (let newPeriod of periods) {
+            // Find if a period already exists at this time
+            const index = updatedPeriods.findIndex(p => p.startTime === newPeriod.startTime);
+            if (index > -1) {
+                updatedPeriods[index] = { ...updatedPeriods[index], ...newPeriod };
+            } else {
+                updatedPeriods.push(newPeriod);
+            }
         }
+    } else {
+        updatedPeriods = periods;
     }
 
     // Sort periods by start time
@@ -94,9 +104,18 @@ const createOrUpdateRoutine = async (req, res) => {
 const deletePeriod = async (req, res) => {
   const { db, client } = await mongoConnect();
   try {
-    const { class_id, section_id, day, startTime } = req.body;
+    const { routine_id, class_id, section_id, day, startTime } = req.body;
     
-    const query = { class_id, section_id, day, madrasa_id: req.user.madrasa_id };
+    const madrasaQuery = { $in: [req.user.madrasa_id, safeObjectId(req.user.madrasa_id)].filter(Boolean) };
+
+    const query = routine_id ? 
+        { _id: safeObjectId(routine_id), madrasa_id: madrasaQuery } : 
+        { 
+            class_id: { $in: [class_id, safeObjectId(class_id)].filter(Boolean) },
+            section_id: { $in: [section_id, safeObjectId(section_id)].filter(Boolean) },
+            day, 
+            madrasa_id: madrasaQuery 
+        };
     const routine = await db.collection("class_routines").findOne(query);
 
     if (!routine) {
