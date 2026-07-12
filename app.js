@@ -69,6 +69,7 @@ app.use("/api", require("./api/student"));
 app.use("/api", require("./api/attendance"));
 app.use("/api", require("./api/class"));
 app.use("/api", require("./api/section"));
+app.use("/api/subject-types", require("./api/subjectType"));
 app.use("/api", require("./api/subject"));
 app.use("/api", require("./api/classRoutine"));
 app.use("/api", require("./api/homework"));

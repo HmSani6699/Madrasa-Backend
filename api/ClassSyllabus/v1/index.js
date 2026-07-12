@@ -1,4 +1,5 @@
 const router = require("express").Router();
+const { ObjectId } = require("mongodb");
 const root = require("app-root-path");
 const Joi = require("joi");
 const validate = require(`${root}/middleware/validate`);
@@ -33,7 +34,7 @@ const getAllSyllabuses = async (req, res) => {
 const getSyllabusById = async (req, res) => {
   const { db, client } = await mongoConnect();
   try {
-    const query = { _id: req.params.id, madrasa_id: req.user.madrasa_id };
+    const query = { _id: new ObjectId(req.params.id), madrasa_id: req.user.madrasa_id };
     const syllabus = await mongo.fetchOne(db, "syllabuses", query);
     if (!syllabus) {
       return res.status(404).json({ success: false, message: "Syllabus not found" });
@@ -75,7 +76,7 @@ const updateSyllabus = async (req, res) => {
     const result = await mongo.updateData(
       db,
       "syllabuses",
-      { _id: req.params.id, madrasa_id: req.user.madrasa_id },
+      { _id: new ObjectId(req.params.id), madrasa_id: req.user.madrasa_id },
       {
         $set: {
           ...req.body,
@@ -101,7 +102,7 @@ const updateSyllabus = async (req, res) => {
 const deleteSyllabus = async (req, res) => {
   const { db, client } = await mongoConnect();
   try {
-    const result = await mongo.deleteData(db, "syllabuses", { _id: req.params.id, madrasa_id: req.user.madrasa_id });
+    const result = await mongo.deleteData(db, "syllabuses", { _id: new ObjectId(req.params.id), madrasa_id: req.user.madrasa_id });
     
     if (!result) {
       return res.status(404).json({ success: false, message: "Syllabus not found" });

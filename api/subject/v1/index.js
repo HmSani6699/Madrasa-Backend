@@ -16,6 +16,18 @@ const subjectSchema = Joi.object({
   status: Joi.string().valid("active", "inactive").default("active"),
 });
 
+// Joi Schema for bulk assignment
+const bulkSubjectSchema = Joi.object({
+  class_id: Joi.string().required(),
+  section_id: Joi.string().allow(null, ""),
+  subjects: Joi.array().items(
+    Joi.object({
+      name: Joi.string().required(),
+      code: Joi.string().required()
+    })
+  ).min(1).required()
+});
+
 // Get all subjects
 const getAllSubjects = async (req, res) => {
   const { db, client } = await mongoConnect();
@@ -153,9 +165,60 @@ const deleteSubject = async (req, res) => {
   }
 };
 
+// Bulk Assign subjects
+const bulkAssignSubjects = async (req, res) => {
+  const { db } = await mongoConnect();
+  try {
+    const { class_id, section_id, subjects } = req.body;
+    const madrasa_id = req.user.madrasa_id;
+
+    // Optional: remove all existing subjects for this class and section first if we want strict sync
+    // Or we just insert ones that don't exist
+    // It's usually better to just insert new ones and maybe delete ones not in the list if the UI sends the full list.
+    // The user's request: "then jegolo select korbo oi golo oi class and section er jonno antry hobe"
+    
+    const existingSubjects = await mongo.fetchMany(db, "subjects", { class_id, section_id, madrasa_id });
+    const existingCodes = existingSubjects.map(s => s.code);
+    
+    const incomingCodes = subjects.map(s => s.code);
+    
+    // Subjects to delete (exist in DB but not in incoming list)
+    const subjectsToDelete = existingSubjects.filter(s => !incomingCodes.includes(s.code)).map(s => s._id);
+    if (subjectsToDelete.length > 0) {
+      await db.collection("subjects").deleteMany({ _id: { $in: subjectsToDelete } });
+    }
+
+    // Subjects to add
+    const newSubjects = [];
+    for (const sub of subjects) {
+      if (!existingCodes.includes(sub.code)) {
+        newSubjects.push({
+          ...sub,
+          class_id,
+          section_id,
+          status: "active",
+          madrasa_id,
+          created_at: Date.now(),
+          updated_at: Date.now()
+        });
+      }
+    }
+
+    if (newSubjects.length > 0) {
+      await db.collection("subjects").insertMany(newSubjects);
+    }
+
+    res.status(200).json({ success: true, message: "Subjects assigned successfully" });
+  } catch (error) {
+    console.log(error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 // Routes
 router.get("/subjects", getAllSubjects);
 router.get("/subjects/:id", getSubjectById);
+router.post("/subjects/bulk-assign", validate(bulkSubjectSchema), bulkAssignSubjects);
 router.post("/subjects", validate(subjectSchema), createSubject);
 router.put("/subjects/:id", validate(subjectSchema), updateSubject);
 router.delete("/subjects/:id", deleteSubject);
