@@ -5,6 +5,11 @@ const validate = require(`${root}/middleware/validate`);
 
 const mongo = require(`${root}/services/mongo-crud`);
 const mongoConnect = require(`${root}/services/mongo-connect`);
+const authMiddleware = require(`${root}/middleware/authenticate`);
+const tenantMiddleware = require(`${root}/middleware/tenantMiddleware`);
+
+router.use(authMiddleware);
+router.use(tenantMiddleware);
 
 // Joi Schema
 const accountSchema = Joi.object({
@@ -22,12 +27,34 @@ const accountSchema = Joi.object({
 const getAllAccounts = async (req, res) => {
   const { db, client } = await mongoConnect();
   try {
-    const query = { madrasa_id: req.user.madrasa_id };
+    const madrasaId = req.user?.madrasa_id;
+    const query = { madrasa_id: madrasaId };
     if (req.query.type) query.type = req.query.type;
     if (req.query.status) query.status = req.query.status;
     
-    const accounts = await mongo.fetchMany(db, "accounts", query, {}, { name: 1 });
-    const total = await mongo.documentCount(db, "accounts", query);
+    let accounts = await mongo.fetchMany(db, "accounts", query, {}, { name: 1 });
+    
+    // Auto-seed default Cash account if none exists for this madrasa
+    if (accounts.length === 0 && madrasaId) {
+      const defaultAccount = {
+        name: "Main Cash (মেইন ক্যাশ)",
+        type: "Cash",
+        account_number: "",
+        bank_name: "",
+        branch_name: "",
+        balance: 0,
+        status: "Active",
+        description: "Default Cash Account",
+        madrasa_id: madrasaId,
+        created_at: Date.now(),
+        updated_at: Date.now()
+      };
+      const result = await mongo.insertOne(db, "accounts", defaultAccount);
+      defaultAccount._id = result.insertedId;
+      accounts = [defaultAccount];
+    }
+
+    const total = accounts.length;
     res.status(200).json({ success: true, data: accounts, total });
   } catch (error) {
     console.log(error);

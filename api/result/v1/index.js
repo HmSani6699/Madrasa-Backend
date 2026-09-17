@@ -1,6 +1,7 @@
 const router = require("express").Router();
 const root = require("app-root-path");
 const Joi = require("joi");
+const { ObjectId } = require("mongodb");
 const validate = require(`${root}/middleware/validate`);
 
 const mongo = require(`${root}/services/mongo-crud`);
@@ -46,7 +47,7 @@ const getAllResults = async (req, res) => {
 const getResultById = async (req, res) => {
   const { db, client } = await mongoConnect();
   try {
-    const result = await mongo.fetchOne(db, "results", { _id: req.params.id, madrasa_id: req.user.madrasa_id });
+    const result = await mongo.fetchOne(db, "results", { _id: new ObjectId(req.params.id), madrasa_id: req.user.madrasa_id });
     if (!result) {
       return res.status(404).json({ success: false, message: "Result not found" });
     }
@@ -120,7 +121,7 @@ const updateResult = async (req, res) => {
     const result = await mongo.updateData(
       db,
       "results",
-      { _id: req.params.id, madrasa_id: req.user.madrasa_id },
+      { _id: new ObjectId(req.params.id), madrasa_id: req.user.madrasa_id },
       {
         $set: {
           ...req.body,
@@ -146,7 +147,7 @@ const updateResult = async (req, res) => {
 const deleteResult = async (req, res) => {
   const { db, client } = await mongoConnect();
   try {
-    const result = await mongo.deleteData(db, "results", { _id: req.params.id, madrasa_id: req.user.madrasa_id });
+    const result = await mongo.deleteData(db, "results", { _id: new ObjectId(req.params.id), madrasa_id: req.user.madrasa_id });
     
     if (!result) {
       return res.status(404).json({ success: false, message: "Result not found" });
