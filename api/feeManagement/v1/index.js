@@ -28,6 +28,7 @@ const collectSchema = Joi.object({
     fee_details: Joi.array().optional(),
     receipt_no: Joi.string().allow("", null).optional(),
     months: Joi.array().items(Joi.string()).optional(),
+    year: Joi.string().allow("", null).optional(),
     subtotal: Joi.number().optional(),
     net_payable: Joi.number().optional(),
     remaining_due: Joi.number().optional(),
@@ -44,16 +45,25 @@ const getMonthIndex = (monthStr) => {
     return idx === -1 ? 0 : idx;
 };
 
+// Helper: Query filter for madrasa_id that matches both ObjectId and string representations
+const getMadrasaFilter = (madrasaId) => {
+    if (!madrasaId) return madrasaId;
+    return ObjectId.isValid(madrasaId)
+        ? { $in: [madrasaId.toString(), new ObjectId(madrasaId)] }
+        : madrasaId;
+};
+
 // 1. Generate Fees for a Class
 const generateFees = async (req, res) => {
     try {
         const { db } = await mongoConnect();
         const { class_id, month, year } = req.body;
         const madrasaId = req.user.madrasa_id;
+        const madrasaFilter = getMadrasaFilter(madrasaId);
 
         // Fetch Fee Setups for this class
         const feeSetups = await db.collection("fee_setups").aggregate([
-            { $match: { class_id, madrasa_id: madrasaId } },
+            { $match: { class_id, madrasa_id: madrasaFilter } },
             { $addFields: { headObjectId: { $toObjectId: "$head_id" } } },
             {
                 $lookup: {
@@ -73,7 +83,7 @@ const generateFees = async (req, res) => {
         // Fetch all active students in this class
         const students = await db.collection("students").find({ 
             class_id, 
-            madrasa_id: madrasaId, 
+            madrasa_id: madrasaFilter, 
             admissionStatus: "Active" 
         }).toArray();
 
@@ -107,7 +117,7 @@ const generateFees = async (req, res) => {
                     fee_setup_id: setup._id.toString(),
                     month: month,
                     year: year,
-                    madrasa_id: madrasaId
+                    madrasa_id: madrasaFilter
                 });
 
                 if (!existingFee) {
@@ -149,10 +159,11 @@ const getPendingFees = async (req, res) => {
         const { db } = await mongoConnect();
         const studentId = req.params.studentId;
         const madrasaId = req.user.madrasa_id;
+        const madrasaFilter = getMadrasaFilter(madrasaId);
 
         const pendingFees = await db.collection("student_fees").find({
             student_id: studentId,
-            madrasa_id: madrasaId,
+            madrasa_id: madrasaFilter,
             status: { $in: ["Unpaid", "Partial"] }
         }).sort({ year: 1, created_at: 1 }).toArray();
 
@@ -169,8 +180,9 @@ const getStudentFeeHistory = async (req, res) => {
         const { db } = await mongoConnect();
         const studentParam = req.params.studentId;
         const madrasaId = req.user.madrasa_id;
+        const madrasaFilter = getMadrasaFilter(madrasaId);
 
-        let studentQuery = { madrasa_id: madrasaId };
+        let studentQuery = { madrasa_id: madrasaFilter };
         if (ObjectId.isValid(studentParam)) {
             studentQuery.$or = [
                 { _id: new ObjectId(studentParam) },
@@ -200,7 +212,7 @@ const getStudentFeeHistory = async (req, res) => {
         // Fetch transactions for this student
         const idStrings = [student._id.toString(), student.student_id].filter(Boolean);
         const transactions = await db.collection("transactions").find({
-            madrasa_id: madrasaId,
+            madrasa_id: madrasaFilter,
             category: "Fee",
             $or: [
                 { reference_id: { $in: idStrings } },
@@ -208,11 +220,137 @@ const getStudentFeeHistory = async (req, res) => {
             ]
         }).sort({ date: -1, created_at: -1 }).toArray();
 
-        // Calculate current pending due from latest transaction or student record
+        // Only active (non-voided) transactions affect current dues and paid status
+        const activeTransactions = transactions.filter(tx => tx.status !== "Voided" && !tx.is_voided);
+
+        // Calculate current pending due from latest active transaction or student record
         let currentDue = student.pendingDue !== undefined ? Number(student.pendingDue) : 0;
-        if (transactions.length > 0 && transactions[0].remaining_due !== undefined) {
-            currentDue = Number(transactions[0].remaining_due);
+        if (activeTransactions.length > 0 && activeTransactions[0].remaining_due !== undefined) {
+            currentDue = Number(activeTransactions[0].remaining_due);
         }
+
+        // Build summary of paid months and annual fees
+        const paidMonthsSummary = {};
+        const annualHeadsPaid = {};
+
+        activeTransactions.forEach((tx) => {
+            const txYear = tx.year ? tx.year.toString() : (tx.date ? new Date(tx.date).getFullYear().toString() : new Date().getFullYear().toString());
+            const isFullyPaid = (Number(tx.remaining_due) === 0 && Number(tx.amount) > 0) || (Number(tx.amount) >= Number(tx.net_payable) && Number(tx.amount) > 0);
+            const isPartial = Number(tx.amount) > 0 && Number(tx.remaining_due) > 0;
+            const status = isFullyPaid ? "Paid" : (isPartial ? "Partial" : "Unpaid");
+
+            // Check fee_details
+            if (tx.fee_details && Array.isArray(tx.fee_details)) {
+                tx.fee_details.forEach((fd) => {
+                    const periodStr = fd.period || fd.month || "";
+                    // Check for month names in periodStr
+                    const months = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+                    months.forEach((m) => {
+                        if (periodStr.toLowerCase().includes(m.toLowerCase())) {
+                            const key = `${m}-${txYear}`;
+                            if (!paidMonthsSummary[key] || paidMonthsSummary[key].status !== "Paid") {
+                                paidMonthsSummary[key] = {
+                                    month: m,
+                                    year: txYear,
+                                    status: status,
+                                    paid_amount: tx.amount,
+                                    remaining_due: tx.remaining_due || 0,
+                                    receipt_no: tx.receipt_no,
+                                    date: tx.date || tx.created_at,
+                                    transaction_id: tx._id
+                                };
+                            }
+                        }
+                    });
+
+                    // Track if this is an annual/one-time fee head
+                    if (isFullyPaid || isPartial) {
+                        const headKey = `${fd.head}-${txYear}`;
+                        if (!annualHeadsPaid[headKey]) {
+                            annualHeadsPaid[headKey] = {
+                                head: fd.head,
+                                year: txYear,
+                                receipt_no: tx.receipt_no,
+                                date: tx.date || tx.created_at,
+                                amount: fd.amount
+                            };
+                        }
+                    }
+                });
+            }
+
+            // Also check tx.months array
+            if (tx.months && Array.isArray(tx.months)) {
+                tx.months.forEach((m) => {
+                    const key = `${m}-${txYear}`;
+                    if (!paidMonthsSummary[key] || paidMonthsSummary[key].status !== "Paid") {
+                        paidMonthsSummary[key] = {
+                            month: m,
+                            year: txYear,
+                            status: status,
+                            paid_amount: tx.amount,
+                            remaining_due: tx.remaining_due || 0,
+                            receipt_no: tx.receipt_no,
+                            date: tx.date || tx.created_at,
+                            transaction_id: tx._id
+                        };
+                    }
+                });
+            }
+        });
+
+        // Propagate subsequent due settlements to paidMonthsSummary
+        const chronTx = [...activeTransactions].sort((a, b) => {
+            const tA = new Date(a.date || a.created_at || 0).getTime();
+            const tB = new Date(b.date || b.created_at || 0).getTime();
+            return tA - tB;
+        });
+
+        Object.keys(paidMonthsSummary).forEach((key) => {
+            const summaryItem = paidMonthsSummary[key];
+            if (summaryItem.status === "Partial" || Number(summaryItem.remaining_due) > 0) {
+                let remDue = Number(summaryItem.remaining_due) || 0;
+                const itemTime = new Date(summaryItem.date || 0).getTime();
+
+                if (currentDue === 0) {
+                    remDue = 0;
+                } else {
+                    const subTxs = chronTx.filter((t) => new Date(t.date || t.created_at || 0).getTime() > itemTime);
+                    for (const sTx of subTxs) {
+                        const sRem = Number(sTx.remaining_due) || 0;
+                        const sPrev = Number(sTx.previous_due) || 0;
+                        const sPaid = Number(sTx.amount) || 0;
+
+                        if (sRem === 0) {
+                            remDue = 0;
+                            break;
+                        }
+
+                        if (sPrev > 0) {
+                            if (sPaid >= sPrev) {
+                                remDue = 0;
+                                break;
+                            } else {
+                                const cleared = Math.min(remDue, Math.max(0, sPaid));
+                                remDue = Math.max(0, remDue - cleared);
+                            }
+                        }
+
+                        remDue = Math.min(remDue, sRem);
+                        if (remDue === 0) break;
+                    }
+
+                    remDue = Math.min(remDue, currentDue);
+                }
+
+                if (remDue === 0) {
+                    summaryItem.status = "Paid";
+                    summaryItem.remaining_due = 0;
+                } else {
+                    summaryItem.remaining_due = remDue;
+                }
+            }
+        });
 
         res.status(200).json({
             success: true,
@@ -223,7 +361,9 @@ const getStudentFeeHistory = async (req, res) => {
                     section_name: sectionName
                 },
                 transactions,
-                previous_due: currentDue
+                previous_due: currentDue,
+                paid_months_summary: paidMonthsSummary,
+                annual_heads_paid: annualHeadsPaid
             }
         });
     } catch (error) {
@@ -238,6 +378,7 @@ const collectFee = async (req, res) => {
         const { db } = await mongoConnect();
         const { student_id, fee_ids, paid_amount, discount, payment_method, account_id } = req.body;
         const madrasaId = req.user.madrasa_id;
+        const madrasaFilter = getMadrasaFilter(madrasaId);
 
         // Verify or auto-resolve deposit account
         let targetAccountId = account_id;
@@ -246,21 +387,21 @@ const collectFee = async (req, res) => {
         if (targetAccountId && ObjectId.isValid(targetAccountId)) {
             account = await db.collection("accounts").findOne({ 
                 _id: new ObjectId(targetAccountId), 
-                madrasa_id: madrasaId 
+                madrasa_id: madrasaFilter 
             });
         }
 
         // Fallback: search for Cash account in this madrasa
         if (!account) {
             account = await db.collection("accounts").findOne({ 
-                madrasa_id: madrasaId,
+                madrasa_id: madrasaFilter,
                 type: "Cash"
             });
         }
 
         // Fallback: any account in this madrasa
         if (!account) {
-            account = await db.collection("accounts").findOne({ madrasa_id: madrasaId });
+            account = await db.collection("accounts").findOne({ madrasa_id: madrasaFilter });
         }
 
         // If still no account, auto-seed "Main Cash"
@@ -286,7 +427,7 @@ const collectFee = async (req, res) => {
         targetAccountId = account._id.toString();
 
         // Fetch student details for enriched metadata
-        let studentQuery = { madrasa_id: madrasaId };
+        let studentQuery = { madrasa_id: madrasaFilter };
         if (ObjectId.isValid(student_id)) {
             studentQuery.$or = [{ _id: new ObjectId(student_id) }, { student_id: student_id }];
         } else {
@@ -323,6 +464,7 @@ const collectFee = async (req, res) => {
             description: `Fee Collection for ${studentName} (${studentCode}) - ${receiptNo}`,
             fee_details: req.body.fee_details || [],
             months: req.body.months || [],
+            year: req.body.year || (req.body.date ? new Date(req.body.date).getFullYear().toString() : new Date().getFullYear().toString()),
             subtotal: subtotalNum,
             discount: discountNum,
             previous_due: previousDueNum,
@@ -363,7 +505,7 @@ const collectFee = async (req, res) => {
             if (validObjIds.length > 0) {
                 const feesToPay = await db.collection("student_fees").find({
                     _id: { $in: validObjIds },
-                    madrasa_id: madrasaId
+                    madrasa_id: madrasaFilter
                 }).toArray();
 
                 let remainingToApply = paidAmountNum + discountNum;
@@ -405,6 +547,114 @@ const collectFee = async (req, res) => {
     }
 };
 
+// Void / Cancel Fee Transaction with Audit Trail and Auto-Rollback
+const voidTransaction = async (req, res) => {
+    try {
+        const { db } = await mongoConnect();
+        const transId = req.params.id;
+        const { reason } = req.body || {};
+        const madrasaId = req.user.madrasa_id;
+        const madrasaFilter = getMadrasaFilter(madrasaId);
+
+        if (!ObjectId.isValid(transId)) {
+            return res.status(400).json({ success: false, message: "Invalid transaction ID" });
+        }
+
+        const transaction = await db.collection("transactions").findOne({
+            _id: new ObjectId(transId),
+            madrasa_id: madrasaFilter
+        });
+
+        if (!transaction) {
+            return res.status(404).json({ success: false, message: "Transaction not found" });
+        }
+
+        if (transaction.status === "Voided" || transaction.is_voided) {
+            return res.status(400).json({ success: false, message: "Transaction is already voided" });
+        }
+
+        const paidAmountNum = Number(transaction.amount) || 0;
+        const targetAccountId = transaction.account_id;
+
+        // 1. Rollback Account Balance
+        if (paidAmountNum > 0 && targetAccountId && ObjectId.isValid(targetAccountId)) {
+            await db.collection("accounts").updateOne(
+                { _id: new ObjectId(targetAccountId), madrasa_id: madrasaFilter },
+                { $inc: { balance: -paidAmountNum } }
+            );
+        }
+
+        // 2. Mark Transaction as Voided with audit trail
+        const voidMetadata = {
+            status: "Voided",
+            is_voided: true,
+            voided_at: Date.now(),
+            voided_by: req.user._id ? req.user._id.toString() : (req.user.id || "System"),
+            voided_by_name: req.user.name || req.user.username || "Staff",
+            void_reason: reason || "Voided by user",
+            updated_at: Date.now()
+        };
+
+        await db.collection("transactions").updateOne(
+            { _id: new ObjectId(transId) },
+            { $set: voidMetadata }
+        );
+
+        // 3. Rollback student pendingDue
+        const studentQuery = {
+            madrasa_id: madrasaFilter,
+            $or: [
+                ...(ObjectId.isValid(transaction.reference_id) ? [{ _id: new ObjectId(transaction.reference_id) }] : []),
+                ...(transaction.student_id ? [{ student_id: transaction.student_id }] : [])
+            ]
+        };
+        const student = await db.collection("students").findOne(studentQuery);
+
+        if (student) {
+            const idStrings = [student._id.toString(), student.student_id].filter(Boolean);
+            const activeTxs = await db.collection("transactions").find({
+                madrasa_id: madrasaFilter,
+                category: "Fee",
+                status: { $ne: "Voided" },
+                $or: [
+                    { reference_id: { $in: idStrings } },
+                    { student_id: { $in: idStrings } }
+                ]
+            }).sort({ date: -1, created_at: -1 }).toArray();
+
+            let restoredDue = 0;
+            if (activeTxs.length > 0 && activeTxs[0].remaining_due !== undefined) {
+                restoredDue = Number(activeTxs[0].remaining_due);
+            } else {
+                restoredDue = Number(transaction.previous_due) || 0;
+            }
+
+            await db.collection("students").updateOne(
+                { _id: student._id },
+                { $set: { pendingDue: restoredDue, updated_at: Date.now() } }
+            );
+        }
+
+        // 4. Rollback any linked student_fees if applicable
+        await db.collection("student_fees").updateMany(
+            { transaction_ids: transId },
+            { $pull: { transaction_ids: transId } }
+        );
+
+        res.status(200).json({
+            success: true,
+            message: "Transaction voided and accounts successfully rolled back",
+            data: {
+                transaction_id: transId,
+                ...voidMetadata
+            }
+        });
+    } catch (error) {
+        console.error("Void Transaction Error:", error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
 // Routes
 router.use(authMiddleware);
 router.use(tenantMiddleware);
@@ -413,5 +663,6 @@ router.post("/generate", rbacMiddleware(["admin", "accountant"]), validate(gener
 router.get("/pending/:studentId", rbacMiddleware(["admin", "accountant"]), getPendingFees);
 router.get("/student-history/:studentId", rbacMiddleware(["admin", "accountant"]), getStudentFeeHistory);
 router.post("/collect", rbacMiddleware(["admin", "accountant"]), validate(collectSchema), collectFee);
+router.post("/void-transaction/:id", rbacMiddleware(["admin", "accountant"]), voidTransaction);
 
 module.exports = router;
