@@ -41,6 +41,13 @@ const staffSchema = Joi.object({
   twitter: Joi.string().allow(""),
   linkedin: Joi.string().allow(""),
 
+  // Salary & Compensation (Optional at creation)
+  basic_salary: Joi.number().min(0).allow(null, ""),
+  house_rent: Joi.number().min(0).allow(null, ""),
+  medical_allowance: Joi.number().min(0).allow(null, ""),
+  transport_allowance: Joi.number().min(0).allow(null, ""),
+  other_allowance: Joi.number().min(0).allow(null, ""),
+
   // Bank & Payment Details
   paymentMethod: Joi.string().valid("Bank", "Mobile Banking", "None").required(),
   bankName: Joi.string().when('paymentMethod', { is: 'Bank', then: Joi.required(), otherwise: Joi.allow("") }),
@@ -147,6 +154,40 @@ const createStaff = async (req, res) => {
             { _id: userId },
             { $set: { reference_id: newStaff.insertedId } }
         );
+    }
+
+    // 3. Optional: Create Salary Setup if basic_salary is provided
+    const basicSalary = parseFloat(payload.basic_salary);
+    if (!isNaN(basicSalary) && basicSalary > 0) {
+        const houseRent = parseFloat(payload.house_rent || 0);
+        const medicalAllowance = parseFloat(payload.medical_allowance || 0);
+        const transportAllowance = parseFloat(payload.transport_allowance || 0);
+        const otherAllowance = parseFloat(payload.other_allowance || 0);
+        const totalSalary = basicSalary + houseRent + medicalAllowance + transportAllowance + otherAllowance;
+
+        await db.collection("salary_setups").insertOne({
+            madrasa_id: madrasaId,
+            staff_id: newStaff.insertedId,
+            basic_salary: basicSalary,
+            house_rent: houseRent,
+            medical_allowance: medicalAllowance,
+            transport_allowance: transportAllowance,
+            other_allowance: otherAllowance,
+            total_salary: totalSalary,
+            effective_from: payload.joinDate ? new Date(payload.joinDate) : new Date(),
+            status: "active",
+            created_at: Date.now(),
+            updated_at: Date.now()
+        });
+
+        // Initialize payroll ledger with 0 balance
+        await db.collection("payroll_ledgers").insertOne({
+            staff_id: newStaff.insertedId,
+            madrasa_id: madrasaId,
+            balance: 0,
+            created_at: Date.now(),
+            updated_at: Date.now()
+        });
     }
     
     res.status(201).json({ 
