@@ -346,23 +346,39 @@ app.set("superSecret", process.env.JWT_SECRET);
    CORS CONFIGURATION
 ========================= */
 
-const allowedOrigins = process.env.ALLOWED_ORIGINS
+const defaultAllowedOrigins = [
+  "http://localhost:3000",
+  "http://localhost:3001",
+  "http://localhost:5173",
+  "https://www.madrasasheba.com",
+  "https://madrasasheba.com",
+  "https://madrasasheba.vercel.app"
+];
+
+const envOrigins = process.env.ALLOWED_ORIGINS
   ? process.env.ALLOWED_ORIGINS
     .split(",")
     .map(origin => origin.trim())
     .filter(Boolean)
   : [];
 
+const allowedOrigins = Array.from(new Set([...defaultAllowedOrigins, ...envOrigins]));
+
 console.log("Allowed Origins:", allowedOrigins);
 
 const corsOptions = {
   origin: function (origin, callback) {
-    // Allow requests without an Origin header
+    // Allow requests without an Origin header (Postman, mobile, curl)
     if (!origin) {
       return callback(null, true);
     }
 
-    if (allowedOrigins.includes(origin)) {
+    const isAllowed =
+      allowedOrigins.includes(origin) ||
+      /^https?:\/\/(.+\.)?madrasasheba\.com(:\d+)?$/.test(origin) ||
+      /^https?:\/\/(.+\.)?vercel\.app(:\d+)?$/.test(origin);
+
+    if (isAllowed) {
       return callback(null, true);
     }
 
@@ -373,12 +389,13 @@ const corsOptions = {
 
   credentials: true,
 
-  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
 
-  allowedHeaders: ["Content-Type", "Authorization"]
+  allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With", "Accept", "Origin"]
 };
 
 app.use(cors(corsOptions));
+app.options("*", cors(corsOptions));
 
 /* =========================
    BODY PARSER
