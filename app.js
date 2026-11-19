@@ -453,7 +453,8 @@ const routeDefinitions = [
   ["/api/payroll/v1", "payroll/v1"],
   ["/api", "class-assign"],
   ["/api", "ClassSyllabus"],
-  ["/api/fee-type", "FeeType"]
+  ["/api/fee-type", "FeeType"],
+  ["/api/demo-request", "demoRequest"]
 ];
 
 /* =========================

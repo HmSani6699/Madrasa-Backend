@@ -2,6 +2,7 @@ const router = require("express").Router();
 const madrasaController = require("./madrasa.controller");
 const plansController = require("./plans.controller");
 const smsController = require("./sms.controller");
+const demoRequestController = require("../../demoRequest/v1/demoRequest.controller");
 const authMiddleware = require("../../../middleware/authenticate");
 const rbacMiddleware = require("../../../middleware/rbacMiddleware");
 
@@ -27,5 +28,11 @@ router.get("/sms/rates", smsController.getSmsRates);
 router.put("/sms/rates", smsController.updateSmsRates);
 router.get("/sms/recharges", smsController.getAllRecharges);
 router.put("/sms/recharges/:id", smsController.processRecharge);
+
+// Demo Requests Management Routes
+router.get("/demo-requests", demoRequestController.getAllDemoRequests);
+router.patch("/demo-requests/:id/status", demoRequestController.updateDemoRequestStatus);
+router.put("/demo-requests/:id/status", demoRequestController.updateDemoRequestStatus);
+router.delete("/demo-requests/:id", demoRequestController.deleteDemoRequest);
 
 module.exports = router;
