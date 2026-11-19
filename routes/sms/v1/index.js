@@ -1,5 +1,5 @@
 const router = require("express").Router();
-const root = require("app-root-path");
+const root = process.cwd();
 const { ObjectId } = require("mongodb");
 const mongoConnect = require(`${root}/services/mongo-connect`);
 const authMiddleware = require(`${root}/middleware/authenticate`);
@@ -41,8 +41,8 @@ router.post("/sms/recharge-request", async (req, res) => {
     };
 
     const result = await db.collection("sms_recharges").insertOne(rechargeRequest);
-    res.status(201).json({ 
-      success: true, 
+    res.status(201).json({
+      success: true,
       message: "Recharge request submitted successfully! Pending approval from Super Admin.",
       data: { ...rechargeRequest, _id: result.insertedId }
     });
@@ -93,8 +93,8 @@ router.get("/sms/balance", async (req, res) => {
       };
     }
 
-    res.status(200).json({ 
-      success: true, 
+    res.status(200).json({
+      success: true,
       data: {
         balance,
         rates: {
@@ -102,7 +102,7 @@ router.get("/sms/balance", async (req, res) => {
           bulk: rates.bulkSmsRate,
           masking: rates.maskingSmsRate
         }
-      } 
+      }
     });
   } catch (error) {
     console.error("Get SMS Balance Error:", error);
@@ -227,9 +227,9 @@ router.post("/sms/broadcast", async (req, res) => {
     const balance = madrasa?.smsWalletBalance || 0;
 
     if (balance < totalCost) {
-      return res.status(400).json({ 
-        success: false, 
-        message: `Insufficient wallet balance! This broadcast requires BDT ${totalCost}, but your current wallet balance is BDT ${balance}. Please recharge and try again.` 
+      return res.status(400).json({
+        success: false,
+        message: `Insufficient wallet balance! This broadcast requires BDT ${totalCost}, but your current wallet balance is BDT ${balance}. Please recharge and try again.`
       });
     }
 

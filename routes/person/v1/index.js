@@ -1,5 +1,5 @@
 const router = require("express").Router();
-const root = require("app-root-path");
+const root = process.cwd();
 
 const mongo = require(`${root}/services/mongo-crud`);
 const mongoConnect = require(`${root}/services/mongo-connect`);

@@ -1,5 +1,5 @@
 const router = require("express").Router();
-const root = require("app-root-path");
+const root = process.cwd();
 const Joi = require("joi");
 const { ObjectId } = require("mongodb");
 
@@ -81,10 +81,10 @@ const generateFees = async (req, res) => {
         }
 
         // Fetch all active students in this class
-        const students = await db.collection("students").find({ 
-            class_id, 
-            madrasa_id: madrasaFilter, 
-            admissionStatus: "Active" 
+        const students = await db.collection("students").find({
+            class_id,
+            madrasa_id: madrasaFilter,
+            admissionStatus: "Active"
         }).toArray();
 
         if (students.length === 0) {
@@ -142,9 +142,9 @@ const generateFees = async (req, res) => {
             }
         }
 
-        res.status(200).json({ 
-            success: true, 
-            message: `Generated ${generatedCount} fee invoices. Skipped ${skippedCount} students due to later admission dates.` 
+        res.status(200).json({
+            success: true,
+            message: `Generated ${generatedCount} fee invoices. Skipped ${skippedCount} students due to later admission dates.`
         });
 
     } catch (error) {
@@ -385,15 +385,15 @@ const collectFee = async (req, res) => {
         let account = null;
 
         if (targetAccountId && ObjectId.isValid(targetAccountId)) {
-            account = await db.collection("accounts").findOne({ 
-                _id: new ObjectId(targetAccountId), 
-                madrasa_id: madrasaFilter 
+            account = await db.collection("accounts").findOne({
+                _id: new ObjectId(targetAccountId),
+                madrasa_id: madrasaFilter
             });
         }
 
         // Fallback: search for Cash account in this madrasa
         if (!account) {
-            account = await db.collection("accounts").findOne({ 
+            account = await db.collection("accounts").findOne({
                 madrasa_id: madrasaFilter,
                 type: "Cash"
             });
@@ -486,7 +486,7 @@ const collectFee = async (req, res) => {
         // Update Account Balance
         if (paidAmountNum > 0) {
             await db.collection("accounts").updateOne(
-                { _id: new ObjectId(targetAccountId) }, 
+                { _id: new ObjectId(targetAccountId) },
                 { $inc: { balance: paidAmountNum } }
             );
         }
@@ -520,8 +520,8 @@ const collectFee = async (req, res) => {
 
                     await db.collection("student_fees").updateOne(
                         { _id: fee._id },
-                        { 
-                            $set: { 
+                        {
+                            $set: {
                                 paid_amount: newPaid,
                                 status: newStatus,
                                 updated_at: Date.now()
@@ -533,9 +533,9 @@ const collectFee = async (req, res) => {
             }
         }
 
-        res.status(200).json({ 
-            success: true, 
-            message: "Fee collected and accounted successfully", 
+        res.status(200).json({
+            success: true,
+            message: "Fee collected and accounted successfully",
             transaction_id: transactionId,
             receipt_no: receiptNo,
             data: transactionData

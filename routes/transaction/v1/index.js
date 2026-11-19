@@ -1,5 +1,5 @@
 const router = require("express").Router();
-const root = require("app-root-path");
+const root = process.cwd();
 const Joi = require("joi");
 const validate = require(`${root}/middleware/validate`);
 const { ObjectId } = require("mongodb");
@@ -27,17 +27,17 @@ const getAllTransactions = async (req, res) => {
     if (req.query.account_id) query.account_id = req.query.account_id;
     if (req.query.type) query.type = req.query.type;
     if (req.query.category) query.category = req.query.category;
-    
+
     if (req.query.start_date && req.query.end_date) {
       query.date = {
         $gte: new Date(req.query.start_date),
         $lte: new Date(req.query.end_date)
       };
     }
-    
+
     const page = parseInt(req.query.page) || 0;
     const limit = parseInt(req.query.limit) || 0;
-    
+
     const transactions = await mongo.fetchMany(db, "transactions", query, {}, { date: -1 }, limit, page);
     const total = await mongo.documentCount(db, "transactions", query);
     res.status(200).json({ success: true, data: transactions, total });
@@ -58,13 +58,13 @@ const getTransactionById = async (req, res) => {
     if (!transaction) {
       return res.status(404).json({ success: false, message: "Transaction not found" });
     }
-    
+
     // Populate account info
     if (transaction.account_id) {
-        const acc = await mongo.fetchOne(db, "accounts", { _id: transaction.account_id, madrasa_id: madrasaId });
-        transaction.account = acc;
+      const acc = await mongo.fetchOne(db, "accounts", { _id: transaction.account_id, madrasa_id: madrasaId });
+      transaction.account = acc;
     }
-    
+
     res.status(200).json({ success: true, data: transaction });
   } catch (error) {
     console.log(error);
@@ -80,20 +80,20 @@ const createTransaction = async (req, res) => {
   try {
     const { type, account_id, amount, transfer_to_account_id } = req.body;
     const madrasaId = req.user.madrasa_id;
-    
+
     // Validate accounts exist
     const account = await mongo.fetchOne(db, "accounts", { _id: account_id, madrasa_id: madrasaId });
     if (!account) return res.status(404).json({ success: false, message: "Source account not found" });
 
     // Validate balance for Expense/Transfer
     if ((type === "Expense" || type === "Transfer") && account.balance < amount) {
-        return res.status(400).json({ success: false, message: "Insufficient balance" });
+      return res.status(400).json({ success: false, message: "Insufficient balance" });
     }
 
     if (type === "Transfer") {
-        if (!transfer_to_account_id) return res.status(400).json({ success: false, message: "Destination account required for Transfer" });
-        const destAccount = await mongo.fetchOne(db, "accounts", { _id: transfer_to_account_id, madrasa_id: madrasaId });
-        if (!destAccount) return res.status(404).json({ success: false, message: "Destination account not found" });
+      if (!transfer_to_account_id) return res.status(400).json({ success: false, message: "Destination account required for Transfer" });
+      const destAccount = await mongo.fetchOne(db, "accounts", { _id: transfer_to_account_id, madrasa_id: madrasaId });
+      if (!destAccount) return res.status(404).json({ success: false, message: "Destination account not found" });
     }
 
     // Prepare transaction record
@@ -104,20 +104,20 @@ const createTransaction = async (req, res) => {
       created_at: Date.now(),
       updated_at: Date.now()
     };
-    
+
     const transaction = await mongo.insertOne(db, "transactions", transactionData);
-    
+
     // Update Balances
     // Note: In production, use a transaction session for atomicity. 
     // Here we do sequential updates.
-    
+
     if (type === "Income") {
-        await db.collection("accounts").updateOne({ _id: new ObjectId(account_id), madrasa_id: madrasaId }, { $inc: { balance: amount } });
+      await db.collection("accounts").updateOne({ _id: new ObjectId(account_id), madrasa_id: madrasaId }, { $inc: { balance: amount } });
     } else if (type === "Expense") {
-        await db.collection("accounts").updateOne({ _id: new ObjectId(account_id), madrasa_id: madrasaId }, { $inc: { balance: -amount } });
+      await db.collection("accounts").updateOne({ _id: new ObjectId(account_id), madrasa_id: madrasaId }, { $inc: { balance: -amount } });
     } else if (type === "Transfer") {
-        await db.collection("accounts").updateOne({ _id: new ObjectId(account_id), madrasa_id: madrasaId }, { $inc: { balance: -amount } });
-        await db.collection("accounts").updateOne({ _id: new ObjectId(transfer_to_account_id), madrasa_id: madrasaId }, { $inc: { balance: amount } });
+      await db.collection("accounts").updateOne({ _id: new ObjectId(account_id), madrasa_id: madrasaId }, { $inc: { balance: -amount } });
+      await db.collection("accounts").updateOne({ _id: new ObjectId(transfer_to_account_id), madrasa_id: madrasaId }, { $inc: { balance: amount } });
     }
 
     res.status(201).json({ success: true, data: transaction, message: "Transaction recorded and balance updated" });

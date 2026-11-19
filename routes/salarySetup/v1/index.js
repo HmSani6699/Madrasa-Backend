@@ -1,5 +1,5 @@
 const router = require("express").Router();
-const root = require("app-root-path");
+const root = process.cwd();
 const { ObjectId } = require("mongodb");
 const Joi = require("joi");
 
@@ -25,49 +25,49 @@ const salarySetupSchema = Joi.object({
 // Create new salary setup
 const createSalarySetup = async (req, res) => {
   const { db, client } = await mongoConnect();
-  
+
   try {
     const payload = req.body;
     const madrasaId = req.user.madrasa_id ? new ObjectId(req.user.madrasa_id) : null;
-    
+
     if (!madrasaId) {
       return res.status(403).json({ success: false, message: "Access denied. No madrasa associated." });
     }
-    
+
     // Validate staff exists and belongs to same madrasa
     const staff = await mongo.fetchOne(db, "staff", { _id: new ObjectId(payload.staff_id) });
     if (!staff) {
       throw new Error("Staff not found");
     }
-    
+
     if (req.user.role !== 'super_admin') {
       if (!staff.madrasa_id || staff.madrasa_id.toString() !== madrasaId.toString()) {
         throw new Error("Access denied. Staff belongs to different madrasa.");
       }
     }
-    
+
     // Calculate total salary
-    const total_salary = 
+    const total_salary =
       parseFloat(payload.basic_salary || 0) +
       parseFloat(payload.house_rent || 0) +
       parseFloat(payload.medical_allowance || 0) +
       parseFloat(payload.transport_allowance || 0) +
       parseFloat(payload.other_allowance || 0);
-    
+
     // Mark previous active setups as inactive
     await db.collection("salary_setups").updateMany(
-      { 
+      {
         staff_id: new ObjectId(payload.staff_id),
         status: "active"
       },
-      { 
-        $set: { 
+      {
+        $set: {
           status: "inactive",
           updated_at: Date.now()
-        } 
+        }
       }
     );
-    
+
     // Create new salary setup
     const salarySetupData = {
       madrasa_id: madrasaId,
@@ -83,18 +83,18 @@ const createSalarySetup = async (req, res) => {
       created_at: Date.now(),
       updated_at: Date.now()
     };
-    
+
     const newSetup = await db.collection("salary_setups").insertOne(salarySetupData);
-    
-    res.status(201).json({ 
-      success: true, 
+
+    res.status(201).json({
+      success: true,
       message: "Salary setup created successfully",
       data: {
         setupId: newSetup.insertedId,
         total_salary: total_salary
       }
     });
-    
+
   } catch (error) {
     console.error("Salary Setup Creation Error:", error);
     res.status(500).json({ success: false, message: error.message });
@@ -108,9 +108,9 @@ const getAllSalarySetups = async (req, res) => {
   const { db, client } = await mongoConnect();
   try {
     const madrasaId = req.user.madrasa_id ? new ObjectId(req.user.madrasa_id) : null;
-    
+
     const query = {};
-    
+
     // Multi-tenant filtering (Super Admin can see all)
     if (req.user.role !== 'super_admin') {
       if (!madrasaId) {
@@ -118,13 +118,13 @@ const getAllSalarySetups = async (req, res) => {
       }
       query.madrasa_id = madrasaId;
     }
-    
+
     if (req.query.staff_id) query.staff_id = new ObjectId(req.query.staff_id);
     if (req.query.status) query.status = req.query.status;
-    
+
     const page = parseInt(req.query.page) || 0;
     const limit = parseInt(req.query.limit) || 0;
-    
+
     // Use aggregation to join with staff collection
     const pipeline = [
       { $match: query },
@@ -139,15 +139,15 @@ const getAllSalarySetups = async (req, res) => {
       { $unwind: { path: "$staff_info", preserveNullAndEmptyArrays: true } },
       { $sort: { created_at: -1 } }
     ];
-    
+
     if (page > 0 && limit > 0) {
       pipeline.push({ $skip: (page - 1) * limit });
       pipeline.push({ $limit: limit });
     }
-    
+
     const setups = await db.collection("salary_setups").aggregate(pipeline).toArray();
     const total = await mongo.documentCount(db, "salary_setups", query);
-    
+
     res.status(200).json({ success: true, data: setups, total });
   } catch (error) {
     console.log(error);
@@ -162,25 +162,25 @@ const getSalarySetupById = async (req, res) => {
   const { db, client } = await mongoConnect();
   try {
     const madrasaId = req.user.madrasa_id ? new ObjectId(req.user.madrasa_id) : null;
-    
+
     const setup = await mongo.fetchOne(db, "salary_setups", { _id: req.params.id });
     if (!setup) {
       return res.status(404).json({ success: false, message: "Salary setup not found" });
     }
-    
+
     // Multi-tenant validation (Super Admin can access all)
     if (req.user.role !== 'super_admin') {
       if (!madrasaId || !setup.madrasa_id || setup.madrasa_id.toString() !== madrasaId.toString()) {
         return res.status(403).json({ success: false, message: "Access denied. Salary setup belongs to different madrasa." });
       }
     }
-    
+
     // Fetch staff info
     if (setup.staff_id) {
       const staff = await mongo.fetchOne(db, "staff", { _id: setup.staff_id });
       if (staff) setup.staff_info = staff;
     }
-    
+
     res.status(200).json({ success: true, data: setup });
   } catch (error) {
     console.log(error);
@@ -196,27 +196,27 @@ const updateSalarySetup = async (req, res) => {
   try {
     const payload = req.body;
     const madrasaId = req.user.madrasa_id ? new ObjectId(req.user.madrasa_id) : null;
-    
+
     // Multi-tenant validation - check setup exists and belongs to same madrasa
     const existingSetup = await mongo.fetchOne(db, "salary_setups", { _id: req.params.id });
     if (!existingSetup) {
       return res.status(404).json({ success: false, message: "Salary setup not found" });
     }
-    
+
     if (req.user.role !== 'super_admin') {
       if (!madrasaId || !existingSetup.madrasa_id || existingSetup.madrasa_id.toString() !== madrasaId.toString()) {
         return res.status(403).json({ success: false, message: "Access denied. Salary setup belongs to different madrasa." });
       }
     }
-    
+
     // Calculate total salary
-    const total_salary = 
+    const total_salary =
       parseFloat(payload.basic_salary || existingSetup.basic_salary) +
       parseFloat(payload.house_rent || existingSetup.house_rent) +
       parseFloat(payload.medical_allowance || existingSetup.medical_allowance) +
       parseFloat(payload.transport_allowance || existingSetup.transport_allowance) +
       parseFloat(payload.other_allowance || existingSetup.other_allowance);
-    
+
     const updateFields = {
       basic_salary: parseFloat(payload.basic_salary || existingSetup.basic_salary),
       house_rent: parseFloat(payload.house_rent || existingSetup.house_rent),
@@ -228,18 +228,18 @@ const updateSalarySetup = async (req, res) => {
       status: payload.status || existingSetup.status,
       updated_at: Date.now()
     };
-    
+
     const result = await mongo.updateData(
       db,
       "salary_setups",
       { _id: req.params.id },
       { $set: updateFields }
     );
-    
+
     if (!result) {
       return res.status(404).json({ success: false, message: "Salary setup not found" });
     }
-    
+
     res.status(200).json({ success: true, message: "Salary setup updated successfully" });
   } catch (error) {
     console.log(error);
@@ -254,25 +254,25 @@ const deleteSalarySetup = async (req, res) => {
   const { db, client } = await mongoConnect();
   try {
     const madrasaId = req.user.madrasa_id ? new ObjectId(req.user.madrasa_id) : null;
-    
+
     // Multi-tenant validation - check setup exists and belongs to same madrasa
     const existingSetup = await mongo.fetchOne(db, "salary_setups", { _id: req.params.id });
     if (!existingSetup) {
       return res.status(404).json({ success: false, message: "Salary setup not found" });
     }
-    
+
     if (req.user.role !== 'super_admin') {
       if (!madrasaId || !existingSetup.madrasa_id || existingSetup.madrasa_id.toString() !== madrasaId.toString()) {
         return res.status(403).json({ success: false, message: "Access denied. Salary setup belongs to different madrasa." });
       }
     }
-    
+
     const result = await mongo.deleteData(db, "salary_setups", { _id: req.params.id });
-    
+
     if (!result) {
       return res.status(404).json({ success: false, message: "Salary setup not found" });
     }
-    
+
     res.status(200).json({ success: true, message: "Salary setup deleted successfully" });
   } catch (error) {
     console.log(error);

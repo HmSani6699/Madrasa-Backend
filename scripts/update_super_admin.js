@@ -2,7 +2,7 @@ const path = require('path');
 const dns = require('dns');
 dns.setServers(['8.8.8.8', '8.8.4.4']);
 require('dotenv').config({ path: path.join(__dirname, '../.env') });
-const root = require("app-root-path");
+const root = process.cwd();
 const getMongoConnection = require(`${root}/services/mongo-connect`);
 const authService = require(`${root}/services/auth.service`);
 
@@ -15,7 +15,7 @@ async function updateSuperAdmin() {
     const connection = await getMongoConnection();
     client = connection.client;
     db = connection.db;
-    
+
     // 1. Delete existing super admin(s)
     console.log("Deleting existing Super Admin users...");
     const deleteResult = await db.collection("users").deleteMany({ role: "super_admin" });
@@ -24,7 +24,7 @@ async function updateSuperAdmin() {
     // 2. Prepare new super admin credentials
     const email = "superadmin@mms.com";
     const password = "SuperAdmin123!";
-    
+
     console.log(`Hashing password for ${email}...`);
     const hashedPassword = await authService.hashPassword(password);
 
@@ -40,7 +40,7 @@ async function updateSuperAdmin() {
 
     console.log("Creating new Super Admin...");
     const insertResult = await db.collection("users").insertOne(newUser);
-    
+
     if (insertResult.insertedCount === 1 || insertResult.acknowledged) {
       console.log("New Super Admin created successfully!");
       console.log("-----------------------------------------");

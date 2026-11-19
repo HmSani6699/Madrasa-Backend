@@ -1,5 +1,5 @@
 const router = require("express").Router();
-const root = require("app-root-path");
+const root = process.cwd();
 const Joi = require("joi");
 const validate = require(`${root}/middleware/validate`);
 
@@ -55,7 +55,7 @@ const updateFeeHead = async (req, res) => {
   const { db, client } = await mongoConnect();
   try {
     const result = await mongo.updateData(
-      db, "fee_heads", 
+      db, "fee_heads",
       { _id: req.params.id, madrasa_id: req.user.madrasa_id },
       { $set: { ...req.body, updated_at: Date.now() } }
     );
@@ -74,10 +74,10 @@ const deleteFeeHead = async (req, res) => {
     const query = { _id: req.params.id, madrasa_id: req.user.madrasa_id };
     const result = await mongo.deleteData(db, "fee_heads", query);
     if (!result) return res.status(404).json({ success: false, message: "Fee head not found" });
-    
+
     // Also cleanup fee setups for this head
     await db.collection("fee_setups").deleteMany({ head_id: req.params.id, madrasa_id: req.user.madrasa_id });
-    
+
     res.status(200).json({ success: true, message: "Deleted successfully" });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });

@@ -1,5 +1,5 @@
 const router = require("express").Router();
-const root = require("app-root-path");
+const root = process.cwd();
 const { ObjectId } = require("mongodb");
 const Joi = require("joi");
 const validate = require(`${root}/middleware/validate`);
@@ -19,7 +19,7 @@ const getAllSubjectTypes = async (req, res) => {
   const { db } = await mongoConnect();
   try {
     const query = { madrasa_id: req.user.madrasa_id };
-    
+
     // Add search functionality
     if (req.query.search) {
       query.$or = [
@@ -27,10 +27,10 @@ const getAllSubjectTypes = async (req, res) => {
         { code: { $regex: req.query.search, $options: "i" } }
       ];
     }
-    
+
     // Add filters
     if (req.query.status) query.status = req.query.status;
-    
+
     const subjectTypes = await mongo.fetchMany(db, "subjectTypes", query, {}, { name: 1 });
     const total = await mongo.documentCount(db, "subjectTypes", query);
     res.status(200).json({ success: true, data: subjectTypes, total });
@@ -65,7 +65,7 @@ const createSubjectType = async (req, res) => {
       created_at: Date.now(),
       updated_at: Date.now()
     };
-    
+
     const subjectType = await mongo.insertOne(db, "subjectTypes", subjectTypeData);
     res.status(201).json({ success: true, data: subjectType });
   } catch (error) {
@@ -89,11 +89,11 @@ const updateSubjectType = async (req, res) => {
         }
       }
     );
-    
+
     if (!result) {
       return res.status(404).json({ success: false, message: "Subject Type not found" });
     }
-    
+
     res.status(200).json({ success: true, message: "Subject Type updated successfully" });
   } catch (error) {
     console.log(error);
@@ -106,11 +106,11 @@ const deleteSubjectType = async (req, res) => {
   const { db } = await mongoConnect();
   try {
     const result = await mongo.deleteData(db, "subjectTypes", { _id: new ObjectId(req.params.id), madrasa_id: req.user.madrasa_id });
-    
+
     if (!result) {
       return res.status(404).json({ success: false, message: "Subject Type not found" });
     }
-    
+
     res.status(200).json({ success: true, message: "Subject Type deleted successfully" });
   } catch (error) {
     console.log(error);

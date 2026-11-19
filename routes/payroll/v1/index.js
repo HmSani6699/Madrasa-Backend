@@ -1,5 +1,5 @@
 const router = require("express").Router();
-const root = require("app-root-path");
+const root = process.cwd();
 const { ObjectId } = require("mongodb");
 const Joi = require("joi");
 
@@ -69,7 +69,7 @@ const generatePayroll = async (req, res) => {
   try {
     const { month, year } = req.body;
     const madrasaId = req.user.madrasa_id ? new ObjectId(req.user.madrasa_id) : null;
-    
+
     if (req.user.role !== 'super_admin' && !madrasaId) {
       return res.status(403).json({ success: false, message: "Access denied." });
     }
@@ -79,17 +79,17 @@ const generatePayroll = async (req, res) => {
 
     // Get active setups
     const activeSetups = await db.collection("salary_setups").find(query).toArray();
-    
+
     if (activeSetups.length === 0) {
-      return res.status(400).json({ 
-        success: false, 
-        message: "কোন সক্রিয় স্যালারি সেটআপ পাওয়া যায়নি। প্রথমে 'Salary Setup' থেকে বেতন নির্ধারণ করুন।" 
+      return res.status(400).json({
+        success: false,
+        message: "কোন সক্রিয় স্যালারি সেটআপ পাওয়া যায়নি। প্রথমে 'Salary Setup' থেকে বেতন নির্ধারণ করুন।"
       });
     }
 
     let generatedCount = 0;
     let skippedCount = 0;
-    
+
     for (let setup of activeSetups) {
       // Check if already generated
       const exists = await db.collection("monthly_salaries").findOne({
@@ -141,9 +141,9 @@ const generatePayroll = async (req, res) => {
           created_at: Date.now(),
           updated_at: Date.now()
         };
-        
+
         await db.collection("monthly_salaries").insertOne(monthlyRecord);
-        
+
         // Update Ledger (Company owes staff +net_payable)
         await updateLedger(db, setup.staff_id, setup.madrasa_id, grossSalary);
         generatedCount++;
@@ -152,8 +152,8 @@ const generatePayroll = async (req, res) => {
       }
     }
 
-    res.status(200).json({ 
-      success: true, 
+    res.status(200).json({
+      success: true,
       message: `${generatedCount} জন কর্মীর জন্য পে-রোল তৈরি হয়েছে (${skippedCount} জন আগেই তৈরিকৃত ছিল)।`,
       generatedCount,
       skippedCount
@@ -320,7 +320,7 @@ const processPayment = async (req, res) => {
           { _id: targetAccountId },
           { $inc: { balance: -payAmount }, $set: { updated_at: Date.now() } }
         );
-        
+
         await db.collection("transactions").insertOne({
           madrasa_id: staff.madrasa_id || madrasaId,
           type: "Expense",
@@ -625,7 +625,7 @@ const getHistory = async (req, res) => {
   const { db } = await mongoConnect();
   try {
     const staffId = new ObjectId(req.params.staffId);
-    
+
     // Fetch generations
     const generations = await db.collection("monthly_salaries").find({ staff_id: staffId }).toArray();
     // Fetch payments

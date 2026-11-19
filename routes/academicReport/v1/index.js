@@ -1,5 +1,5 @@
 const router = require("express").Router();
-const root = require("app-root-path");
+const root = process.cwd();
 const Joi = require("joi");
 const validate = require(`${root}/middleware/validate`);
 
@@ -115,10 +115,10 @@ const getAllReports = async (req, res) => {
     if (req.query.exam_id) query.exam_id = req.query.exam_id;
     if (req.query.subject_id) query.subject_id = req.query.subject_id;
     if (req.query.class_id) query.class_id = req.query.class_id;
-    
+
     const page = parseInt(req.query.page) || 0;
     const limit = parseInt(req.query.limit) || 0;
-    
+
     const pipeline = buildLookupPipeline(query, limit, page, { date: -1 });
     const reports = await db.collection("academic_reports").aggregate(pipeline).toArray();
     const total = await mongo.documentCount(db, "academic_reports", query);
@@ -139,7 +139,7 @@ const getReportById = async (req, res) => {
     const query = { _id: new ObjectId(req.params.id), madrasa_id: req.user.madrasa_id };
     const pipeline = buildLookupPipeline(query, 1, 0, {});
     const reports = await db.collection("academic_reports").aggregate(pipeline).toArray();
-    
+
     if (!reports || reports.length === 0) {
       return res.status(404).json({ success: false, message: "Report not found" });
     }
@@ -160,9 +160,9 @@ const getStudentReportCard = async (req, res) => {
       student_id: req.params.studentId,
       madrasa_id: req.user.madrasa_id
     };
-    
+
     if (req.query.exam_id) query.exam_id = req.query.exam_id;
-    
+
     const pipeline = buildLookupPipeline(query, 0, 0, { date: -1 });
     const reports = await db.collection("academic_reports").aggregate(pipeline).toArray();
     res.status(200).json({ success: true, data: reports });
@@ -184,7 +184,7 @@ const createReport = async (req, res) => {
       created_at: Date.now(),
       updated_at: Date.now()
     };
-    
+
     const report = await mongo.insertOne(db, "academic_reports", reportData);
     res.status(201).json({ success: true, data: report });
   } catch (error) {
@@ -210,11 +210,11 @@ const updateReport = async (req, res) => {
         }
       }
     );
-    
+
     if (!result) {
       return res.status(404).json({ success: false, message: "Report not found" });
     }
-    
+
     res.status(200).json({ success: true, message: "Report updated successfully" });
   } catch (error) {
     console.log(error);
@@ -229,11 +229,11 @@ const deleteReport = async (req, res) => {
   const { db, client } = await mongoConnect();
   try {
     const result = await mongo.deleteData(db, "academic_reports", { _id: req.params.id, madrasa_id: req.user.madrasa_id });
-    
+
     if (!result) {
       return res.status(404).json({ success: false, message: "Report not found" });
     }
-    
+
     res.status(200).json({ success: true, message: "Report deleted successfully" });
   } catch (error) {
     console.log(error);

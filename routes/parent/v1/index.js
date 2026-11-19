@@ -1,5 +1,5 @@
 const router = require("express").Router();
-const root = require("app-root-path");
+const root = process.cwd();
 const { ObjectId } = require("mongodb");
 const Joi = require("joi");
 const validate = require(`${root}/middleware/validate`);
@@ -17,7 +17,7 @@ const parentSchema = Joi.object({
   motherContact: Joi.string().allow(""),
   email: Joi.string().email().allow(""),
   address: Joi.string().required(),
-  
+
   // Documents / Photos
   fatherPhoto: Joi.string().allow(""),
   motherPhoto: Joi.string().allow(""),
@@ -26,8 +26,8 @@ const parentSchema = Joi.object({
 
 // Update Schema (all optional)
 const parentUpdateSchema = parentSchema.fork(
-    Object.keys(parentSchema.describe().keys),
-    (schema) => schema.optional()
+  Object.keys(parentSchema.describe().keys),
+  (schema) => schema.optional()
 );
 
 
@@ -48,7 +48,7 @@ const getAllParents = async (req, res) => {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 10;
     const skip = (page - 1) * limit;
-    
+
     // Use aggregation to count children (students linked to this guardian)
     const pipeline = [
       { $match: matchQuery },
@@ -57,9 +57,9 @@ const getAllParents = async (req, res) => {
       { $limit: limit },
       {
         $lookup: {
-          from: "students",     
+          from: "students",
           localField: "_id",
-          foreignField: "guardian_id", 
+          foreignField: "guardian_id",
           as: "children"
         }
       },
@@ -72,7 +72,7 @@ const getAllParents = async (req, res) => {
 
     const parents = await db.collection("parents").aggregate(pipeline).toArray();
     const total = await mongo.documentCount(db, "parents", matchQuery);
-    
+
     res.status(200).json({ success: true, data: parents, total });
   } catch (error) {
     console.error(error);
@@ -107,9 +107,9 @@ const getParentStudents = async (req, res) => {
       return res.status(400).json({ success: false, message: "Invalid Parent ID format" });
     }
     // using guardian_id as per student schema
-    const students = await mongo.fetchMany(db, "students", { 
-        guardian_id: new ObjectId(req.params.id),
-        madrasa_id: req.user.madrasa_id 
+    const students = await mongo.fetchMany(db, "students", {
+      guardian_id: new ObjectId(req.params.id),
+      madrasa_id: req.user.madrasa_id
     });
     res.status(200).json({ success: true, data: students });
   } catch (error) {
@@ -125,12 +125,12 @@ const createParent = async (req, res) => {
   const { db, client } = await mongoConnect();
   try {
     // Check for duplicate contact within same madrasa
-    const existing = await mongo.fetchOne(db, "parents", { 
-        contact: req.body.contact,
-        madrasa_id: req.user.madrasa_id
+    const existing = await mongo.fetchOne(db, "parents", {
+      contact: req.body.contact,
+      madrasa_id: req.user.madrasa_id
     });
     if (existing) {
-        return res.status(409).json({ success: false, message: "Guardian with this contact already exists" });
+      return res.status(409).json({ success: false, message: "Guardian with this contact already exists" });
     }
 
     const parentData = {
@@ -139,7 +139,7 @@ const createParent = async (req, res) => {
       created_at: Date.now(),
       updated_at: Date.now()
     };
-    
+
     const parent = await mongo.insertOne(db, "parents", parentData);
     res.status(201).json({ success: true, data: parent });
   } catch (error) {
@@ -164,11 +164,11 @@ const updateParent = async (req, res) => {
       { _id: req.params.id, madrasa_id: req.user.madrasa_id },
       { $set: payload }
     );
-    
+
     if (!result) {
       return res.status(404).json({ success: false, message: "Parent not found" });
     }
-    
+
     res.status(200).json({ success: true, message: "Parent updated successfully" });
   } catch (error) {
     console.log(error);
@@ -184,13 +184,13 @@ const deleteParent = async (req, res) => {
   try {
     // Optional: Check if parent has students before deleting?
     // For now, allow delete.
-    
+
     const result = await mongo.deleteData(db, "parents", { _id: req.params.id, madrasa_id: req.user.madrasa_id });
-    
+
     if (!result) {
       return res.status(404).json({ success: false, message: "Parent not found" });
     }
-    
+
     res.status(200).json({ success: true, message: "Parent deleted successfully" });
   } catch (error) {
     console.log(error);

@@ -1,5 +1,5 @@
 const router = require("express").Router();
-const root = require("app-root-path");
+const root = process.cwd();
 const Joi = require("joi");
 const validate = require(`${root}/middleware/validate`);
 
@@ -33,9 +33,9 @@ const getAllFeeTypes = async (req, res) => {
 const createFeeType = async (req, res) => {
   const { db, client } = await mongoConnect();
   try {
-    const payload = { 
-      ...req.body, 
-      madrasa_id: req.user.madrasa_id, 
+    const payload = {
+      ...req.body,
+      madrasa_id: req.user.madrasa_id,
       created_at: Date.now(),
       status: req.body.status || "active"
     };
@@ -52,7 +52,7 @@ const updateFeeType = async (req, res) => {
   const { db, client } = await mongoConnect();
   try {
     const result = await mongo.updateData(
-      db, "fee_types", 
+      db, "fee_types",
       { _id: req.params.id, madrasa_id: req.user.madrasa_id },
       { $set: { ...req.body, updated_at: Date.now() } }
     );
@@ -71,7 +71,7 @@ const deleteFeeType = async (req, res) => {
     const query = { _id: req.params.id, madrasa_id: req.user.madrasa_id };
     const result = await mongo.deleteData(db, "fee_types", query);
     if (!result) return res.status(404).json({ success: false, message: "Fee type not found" });
-    
+
     res.status(200).json({ success: true, message: "Deleted successfully" });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });

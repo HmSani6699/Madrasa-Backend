@@ -1,6 +1,6 @@
 const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '../.env') });
-const root = require("app-root-path");
+const root = process.cwd();
 const getMongoConnection = require(`${root}/services/mongo-connect`);
 
 async function resetSuperAdmin() {
@@ -10,10 +10,10 @@ async function resetSuperAdmin() {
 
     const { client, db } = await getMongoConnection();
     console.log("Connected to MongoDB.");
-    
+
     const result = await db.collection("users").deleteMany({ role: "super_admin" });
     console.log(`Deleted ${result.deletedCount} Super Admin user(s).`);
-    
+
     await client.close();
     console.log("Connection closed.");
   } catch (error) {

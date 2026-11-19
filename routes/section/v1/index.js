@@ -1,5 +1,5 @@
 const router = require("express").Router();
-const root = require("app-root-path");
+const root = process.cwd();
 const { ObjectId } = require("mongodb");
 const Joi = require("joi");
 const validate = require(`${root}/middleware/validate`);
@@ -14,7 +14,7 @@ const sectionSchema = Joi.object({
   class_id: Joi.string().allow(null, ""),
   capacity: Joi.number().allow(null, 0),
   roomNumber: Joi.string().allow(""),
-  teacher_id: Joi.string().allow(null, ""), 
+  teacher_id: Joi.string().allow(null, ""),
   subjects: Joi.array().items(Joi.string()).allow(null),
 });
 
@@ -24,7 +24,7 @@ const getAllSections = async (req, res) => {
   try {
     const query = { madrasa_id: req.user.madrasa_id };
     if (req.query.class_id) query.class_id = req.query.class_id;
-    
+
     const sections = await mongo.fetchMany(db, "sections", query, {}, { name: 1 });
     const total = await mongo.documentCount(db, "sections", query);
     res.status(200).json({ success: true, data: sections, total });
@@ -44,13 +44,13 @@ const getSectionById = async (req, res) => {
     if (!section) {
       return res.status(404).json({ success: false, message: "Section not found" });
     }
-    
+
     // Get class info
     if (section.class_id) {
       const classInfo = await mongo.fetchOne(db, "classes", { _id: new ObjectId(section.class_id), madrasa_id: req.user.madrasa_id });
       section.class = classInfo;
     }
-    
+
     res.status(200).json({ success: true, data: section });
   } catch (error) {
     console.log(error);
@@ -70,7 +70,7 @@ const createSection = async (req, res) => {
       created_at: Date.now(),
       updated_at: Date.now()
     };
-    
+
     const section = await mongo.insertOne(db, "sections", sectionData);
     res.status(201).json({ success: true, data: section });
   } catch (error) {
@@ -96,11 +96,11 @@ const updateSection = async (req, res) => {
         }
       }
     );
-    
+
     if (!result) {
       return res.status(404).json({ success: false, message: "Section not found" });
     }
-    
+
     res.status(200).json({ success: true, message: "Section updated successfully" });
   } catch (error) {
     console.log(error);
@@ -115,11 +115,11 @@ const deleteSection = async (req, res) => {
   const { db, client } = await mongoConnect();
   try {
     const result = await mongo.deleteData(db, "sections", { _id: new ObjectId(req.params.id), madrasa_id: req.user.madrasa_id });
-    
+
     if (!result) {
       return res.status(404).json({ success: false, message: "Section not found" });
     }
-    
+
     res.status(200).json({ success: true, message: "Section deleted successfully" });
   } catch (error) {
     console.log(error);

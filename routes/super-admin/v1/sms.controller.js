@@ -1,4 +1,4 @@
-const root = require("app-root-path");
+const root = process.cwd();
 const mongoConnect = require(`${root}/services/mongo-connect`);
 const { ObjectId } = require("mongodb");
 
@@ -100,11 +100,11 @@ const smsController = {
       // Update recharge request status
       await db.collection("sms_recharges").updateOne(
         { _id: new ObjectId(id) },
-        { 
-          $set: { 
-            status, 
-            processed_at: new Date() 
-          } 
+        {
+          $set: {
+            status,
+            processed_at: new Date()
+          }
         }
       );
 
@@ -115,17 +115,17 @@ const smsController = {
 
         await db.collection("madrasas").updateOne(
           { _id: new ObjectId(madrasaId) },
-          { 
-            $inc: { 
-              "smsWalletBalance": amount 
-            } 
+          {
+            $inc: {
+              "smsWalletBalance": amount
+            }
           }
         );
       }
 
-      res.status(200).json({ 
-        success: true, 
-        message: `Recharge request successfully ${status.toLowerCase()}!` 
+      res.status(200).json({
+        success: true,
+        message: `Recharge request successfully ${status.toLowerCase()}!`
       });
     } catch (error) {
       console.error("Process Recharge Error:", error);

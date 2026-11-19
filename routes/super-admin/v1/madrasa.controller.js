@@ -1,4 +1,4 @@
-const root = require("app-root-path");
+const root = process.cwd();
 const mongoConnect = require(`${root}/services/mongo-connect`);
 const authService = require(`${root}/services/auth.service`);
 const { ObjectId } = require("mongodb");
@@ -21,24 +21,24 @@ const getSubscriptionDefaults = (plan, billingCycle) => {
 
 const madrasaController = {
   createMadrasa: async (req, res) => {
-    const { 
-      madrasaName, 
-      address, 
-      adminName, 
-      adminEmail, 
-      adminPassword, 
-      plan, 
-      billingCycle, 
-      price, 
+    const {
+      madrasaName,
+      address,
+      adminName,
+      adminEmail,
+      adminPassword,
+      plan,
+      billingCycle,
+      price,
       nextBillingDate,
       statusMessage
     } = req.body;
 
     // Validation
     if (!madrasaName || !adminEmail || !adminPassword) {
-      return res.status(400).json({ 
-        success: false, 
-        message: "Madrasa Name, Admin Email, and Admin Password are required." 
+      return res.status(400).json({
+        success: false,
+        message: "Madrasa Name, Admin Email, and Admin Password are required."
       });
     }
 
@@ -136,12 +136,12 @@ const madrasaController = {
     const { db } = await mongoConnect();
     try {
       const madrasas = await db.collection("madrasas").find().toArray();
-      
+
       // Enhance madrasas with dynamic statistics (student count and admin user details)
       const enhancedMadrasas = await Promise.all(madrasas.map(async (m) => {
         const studentCount = await db.collection("students").countDocuments({ madrasa_id: m._id });
         const adminUser = await db.collection("users").findOne({ madrasa_id: m._id, role: "admin" });
-        
+
         // Ensure plan is nicely capitalized for frontend
         let planLabel = m.plan;
         if (m.subscription && m.subscription.plan) {
@@ -174,7 +174,7 @@ const madrasaController = {
     try {
       const madrasaId = new ObjectId(id);
       const existingMadrasa = await db.collection("madrasas").findOne({ _id: madrasaId });
-      
+
       if (!existingMadrasa) {
         return res.status(404).json({ success: false, message: "Madrasa not found" });
       }
@@ -186,7 +186,7 @@ const madrasaController = {
       if (name) updateData.name = name;
       if (address) updateData.address = address;
       if (statusMessage !== undefined) updateData.statusMessage = statusMessage;
-      
+
       if (status) {
         // Normalize status: "Active" / "Suspended" / "Blocked"
         const formattedStatus = status.charAt(0).toUpperCase() + status.slice(1).toLowerCase();
@@ -237,7 +237,7 @@ const madrasaController = {
     try {
       if (session) session.startTransaction();
       const queryOptions = session ? { session } : {};
-      
+
       const madrasaId = new ObjectId(id);
 
       // 1. Delete the Madrasa

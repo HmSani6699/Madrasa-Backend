@@ -1,4 +1,4 @@
-const root = require("app-root-path");
+const root = process.cwd();
 const mongoConnect = require(`${root}/services/mongo-connect`);
 const { ObjectId } = require("mongodb");
 
@@ -74,11 +74,11 @@ const plansController = {
 
   createPlan: async (req, res) => {
     const { name, priceMonthly, priceYearly, studentLimit, description, features } = req.body;
-    
+
     if (!name || priceMonthly === undefined || priceYearly === undefined || studentLimit === undefined) {
-      return res.status(400).json({ 
-        success: false, 
-        message: "Name, priceMonthly, priceYearly, and studentLimit are required." 
+      return res.status(400).json({
+        success: false,
+        message: "Name, priceMonthly, priceYearly, and studentLimit are required."
       });
     }
 
@@ -96,10 +96,10 @@ const plansController = {
       };
 
       const result = await db.collection("plans").insertOne(newPlan);
-      res.status(201).json({ 
-        success: true, 
-        message: "Plan created successfully", 
-        data: { ...newPlan, _id: result.insertedId } 
+      res.status(201).json({
+        success: true,
+        message: "Plan created successfully",
+        data: { ...newPlan, _id: result.insertedId }
       });
     } catch (error) {
       console.error("Create Plan Error:", error);
@@ -115,7 +115,7 @@ const plansController = {
       if (!ObjectId.isValid(id)) {
         return res.status(400).json({ success: false, message: "Invalid Plan ID format" });
       }
-      
+
       const updateData = {
         updated_at: new Date()
       };

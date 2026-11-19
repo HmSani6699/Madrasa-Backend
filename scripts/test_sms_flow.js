@@ -1,7 +1,7 @@
 const dotenv = require("dotenv");
 dotenv.config();
 
-const root = require("app-root-path");
+const root = process.cwd();
 const mongoConnect = require(`${root}/services/mongo-connect`);
 const { ObjectId } = require("mongodb");
 

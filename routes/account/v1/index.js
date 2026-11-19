@@ -1,5 +1,5 @@
 const router = require("express").Router();
-const root = require("app-root-path");
+const root = process.cwd();
 const Joi = require("joi");
 const validate = require(`${root}/middleware/validate`);
 
@@ -31,9 +31,9 @@ const getAllAccounts = async (req, res) => {
     const query = { madrasa_id: madrasaId };
     if (req.query.type) query.type = req.query.type;
     if (req.query.status) query.status = req.query.status;
-    
+
     let accounts = await mongo.fetchMany(db, "accounts", query, {}, { name: 1 });
-    
+
     // Auto-seed default Cash account if none exists for this madrasa
     if (accounts.length === 0 && madrasaId) {
       const defaultAccount = {
@@ -91,7 +91,7 @@ const createAccount = async (req, res) => {
       created_at: Date.now(),
       updated_at: Date.now()
     };
-    
+
     const account = await mongo.insertOne(db, "accounts", accountData);
     res.status(201).json({ success: true, data: account });
   } catch (error) {
@@ -117,11 +117,11 @@ const updateAccount = async (req, res) => {
         }
       }
     );
-    
+
     if (!result) {
       return res.status(404).json({ success: false, message: "Account not found" });
     }
-    
+
     res.status(200).json({ success: true, message: "Account updated successfully" });
   } catch (error) {
     console.log(error);
@@ -140,15 +140,15 @@ const deleteAccount = async (req, res) => {
     // Check usage
     const usage = await mongo.documentCount(db, "transactions", { account_id: req.params.id, madrasa_id: madrasaId });
     if (usage > 0) {
-        return res.status(400).json({ success: false, message: "Cannot delete account with existing transactions" });
+      return res.status(400).json({ success: false, message: "Cannot delete account with existing transactions" });
     }
 
     const result = await mongo.deleteData(db, "accounts", { _id: req.params.id, madrasa_id: madrasaId });
-    
+
     if (!result) {
       return res.status(404).json({ success: false, message: "Account not found" });
     }
-    
+
     res.status(200).json({ success: true, message: "Account deleted successfully" });
   } catch (error) {
     console.log(error);

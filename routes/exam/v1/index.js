@@ -1,5 +1,5 @@
 const router = require("express").Router();
-const root = require("app-root-path");
+const root = process.cwd();
 const Joi = require("joi");
 const validate = require(`${root}/middleware/validate`);
 
@@ -25,7 +25,7 @@ const getAllExams = async (req, res) => {
     if (req.query.exam_name_id) query.exam_name_id = req.query.exam_name_id;
     if (req.query.class_id) query.class_id = req.query.class_id;
     if (req.query.academic_year) query.academic_year = req.query.academic_year;
-    
+
     const exams = await mongo.fetchMany(db, "exams", query, {}, { start_date: -1 });
     const total = await mongo.documentCount(db, "exams", query);
     res.status(200).json({ success: true, data: exams, total });
@@ -45,13 +45,13 @@ const getExamById = async (req, res) => {
     if (!exam) {
       return res.status(404).json({ success: false, message: "Exam not found" });
     }
-    
+
     // Get exam name details
     if (exam.exam_name_id) {
       const examName = await mongo.fetchOne(db, "exam_names", { _id: exam.exam_name_id, madrasa_id: req.user.madrasa_id });
       exam.exam_name = examName;
     }
-    
+
     res.status(200).json({ success: true, data: exam });
   } catch (error) {
     console.log(error);
@@ -71,7 +71,7 @@ const createExam = async (req, res) => {
       created_at: Date.now(),
       updated_at: Date.now()
     };
-    
+
     const exam = await mongo.insertOne(db, "exams", examData);
     res.status(201).json({ success: true, data: exam });
   } catch (error) {
@@ -97,11 +97,11 @@ const updateExam = async (req, res) => {
         }
       }
     );
-    
+
     if (!result) {
       return res.status(404).json({ success: false, message: "Exam not found" });
     }
-    
+
     res.status(200).json({ success: true, message: "Exam updated successfully" });
   } catch (error) {
     console.log(error);
@@ -116,11 +116,11 @@ const deleteExam = async (req, res) => {
   const { db, client } = await mongoConnect();
   try {
     const result = await mongo.deleteData(db, "exams", { _id: req.params.id, madrasa_id: req.user.madrasa_id });
-    
+
     if (!result) {
       return res.status(404).json({ success: false, message: "Exam not found" });
     }
-    
+
     res.status(200).json({ success: true, message: "Exam deleted successfully" });
   } catch (error) {
     console.log(error);

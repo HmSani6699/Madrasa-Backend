@@ -1,4 +1,4 @@
-const root = require("app-root-path");
+const root = process.cwd();
 const mongoConnect = require(`${root}/services/mongo-connect`);
 const authService = require(`${root}/services/auth.service`);
 const { ObjectId } = require("mongodb");
@@ -13,7 +13,7 @@ const authController = {
     }
 
     const { db, client } = await mongoConnect();
-    
+
     try {
       // Find user by email or username
       const user = await db.collection("users").findOne({
@@ -41,13 +41,13 @@ const authController = {
         created_at: new Date(),
         expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // 7 days
       });
-      
+
 
       // Fetch Madrasa info for slug
       let madrasa_slug = "";
       if (user.madrasa_id) {
         const madrasa = await db.collection("madrasas").findOne({ _id: new ObjectId(user.madrasa_id) });
-      
+
         if (madrasa) madrasa_slug = madrasa.slug;
       }
 

@@ -1,4 +1,4 @@
-const root = require("app-root-path");
+const root = process.cwd();
 const mongoConnect = require(`${root}/services/mongo-connect`);
 const { ObjectId } = require("mongodb");
 
@@ -16,13 +16,13 @@ const portalController = {
 
       // 2. Fetch Portal Settings for this Madrasa
       let settings = await db.collection("portal_settings").findOne({ madrasa_id: madrasa._id });
-      
+
       // Fetch actual classes for form options
       const activeClasses = await db.collection("classes").find({ madrasa_id: madrasa._id }).toArray();
       const activeSections = await db.collection("sections").find({ madrasa_id: madrasa._id }).toArray();
 
-      const classOptions = activeClasses.map(c => ({ 
-        value: c._id.toString(), 
+      const classOptions = activeClasses.map(c => ({
+        value: c._id.toString(),
         label: c.name,
         sections: activeSections
           .filter(s => s.class_id.toString() === c._id.toString())
@@ -123,14 +123,14 @@ const portalController = {
     const { slug } = req.params;
     const { db } = await mongoConnect();
 
-    
-    
+
+
 
     try {
       // 1. Find Madrasa by slug
       const madrasa = await db.collection("madrasas").findOne({ slug: slug });
 
-     
+
 
       if (!madrasa) {
         return res.status(404).json({ success: false, message: "Madrasa not found" });
@@ -141,7 +141,7 @@ const portalController = {
       const activeClasses = await db.collection("classes").find(madrasaIdMatch).toArray();
       const activeSections = await db.collection("sections").find(madrasaIdMatch).toArray();
 
-       
+
 
       const academicData = activeClasses.map(c => ({
         id: c._id.toString(),

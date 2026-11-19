@@ -1,5 +1,5 @@
 const router = require("express").Router();
-const root = require("app-root-path");
+const root = process.cwd();
 const { ObjectId } = require("mongodb");
 const Joi = require("joi");
 const validate = require(`${root}/middleware/validate`);
@@ -58,17 +58,17 @@ const staffSchema = Joi.object({
   accountNo: Joi.string().when('paymentMethod', { is: 'Bank', then: Joi.required(), otherwise: Joi.allow("") }),
   mobileMethods: Joi.array().items(Joi.string()).when('paymentMethod', { is: 'Mobile Banking', then: Joi.required(), otherwise: Joi.allow(null) }),
   mobileNumber: Joi.string().when('paymentMethod', { is: 'Mobile Banking', then: Joi.required(), otherwise: Joi.allow("") }),
-  
+
   // Frontend might wrap bank details in an object, but schema seems flat or mixed. 
   // Let's adjust based on CreateEmployee payload structure:
   // payload = { ...formData, paymentMethod, bankDetails: { ... } }
   bankDetails: Joi.object({
-      bankName: Joi.string().allow(""),
-      holderName: Joi.string().allow(""),
-      bankBranch: Joi.string().allow(""),
-      bankAddress: Joi.string().allow(""),
-      ifscCode: Joi.string().allow(""),
-      accountNo: Joi.string().allow("")
+    bankName: Joi.string().allow(""),
+    holderName: Joi.string().allow(""),
+    bankBranch: Joi.string().allow(""),
+    bankAddress: Joi.string().allow(""),
+    ifscCode: Joi.string().allow(""),
+    accountNo: Joi.string().allow("")
   }).optional()
 });
 
@@ -79,124 +79,124 @@ const createStaff = async (req, res) => {
     const connection = await mongoConnect();
     db = connection.db;
     client = connection.client;
-    
+
     const payload = req.body;
     const madrasaId = req.user.madrasa_id ? new ObjectId(req.user.madrasa_id) : null;
 
     // 1. Create User Identity (if email provided)
     let userId = null;
     if (payload.email && payload.password) {
-        // Check if user exists
-        const existingUser = await db.collection("users").findOne({ email: payload.email });
-        if (existingUser) {
-            throw new Error("User with this email already exists");
-        }
+      // Check if user exists
+      const existingUser = await db.collection("users").findOne({ email: payload.email });
+      if (existingUser) {
+        throw new Error("User with this email already exists");
+      }
 
-        const hashedPassword = await authService.hashPassword(payload.password);
-        const newUser = await db.collection("users").insertOne({
-            email: payload.email,
-            password: hashedPassword,
-            role: payload.role.toLowerCase(), // teacher, staff, accountant
-            username: payload.name.replace(/\s+/g, '').toLowerCase() + Math.floor(Math.random() * 1000),
-            madrasa_id: madrasaId,
-            reference_id: null, // Will update after creating staff profile
-            created_at: Date.now(),
-            updated_at: Date.now()
-        });
-        
-        userId = newUser.insertedId;
+      const hashedPassword = await authService.hashPassword(payload.password);
+      const newUser = await db.collection("users").insertOne({
+        email: payload.email,
+        password: hashedPassword,
+        role: payload.role.toLowerCase(), // teacher, staff, accountant
+        username: payload.name.replace(/\s+/g, '').toLowerCase() + Math.floor(Math.random() * 1000),
+        madrasa_id: madrasaId,
+        reference_id: null, // Will update after creating staff profile
+        created_at: Date.now(),
+        updated_at: Date.now()
+      });
+
+      userId = newUser.insertedId;
     }
 
     // 2. Create Staff Profile
     const staffData = {
-        employeeID: payload.employeeID,
-        userId: userId,
-        madrasa_id: madrasaId,
-        name: payload.name,
-        role: payload.role,
-        designation: payload.designation,
-        department: payload.department,
-        joinDate: payload.joinDate,
-        qualification: payload.qualification,
-        totalExperience: payload.totalExperience,
-        gender: payload.gender,
-        bloodGroup: payload.bloodGroup,
-        dob: payload.dob,
-        phone: payload.phone,
-        address: payload.address,
-        photo: payload.photo,
-        socialLinks: {
-            facebook: payload.facebook,
-            twitter: payload.twitter,
-            linkedin: payload.linkedin
-        },
-        paymentDetails: {
-            method: payload.paymentMethod,
-            bankName: payload.bankDetails?.bankName || payload.bankName,
-            holderName: payload.bankDetails?.holderName || payload.holderName,
-            branch: payload.bankDetails?.bankBranch || payload.bankBranch,
-            address: payload.bankDetails?.bankAddress || payload.bankAddress,
-            ifsc: payload.bankDetails?.ifscCode || payload.ifscCode,
-            accountNo: payload.bankDetails?.accountNo || payload.accountNo,
-            mobileMethods: payload.mobileMethods,
-            mobileNumber: payload.mobileNumber
-        },
-        status: "Active",
-        created_at: Date.now(),
-        updated_at: Date.now()
+      employeeID: payload.employeeID,
+      userId: userId,
+      madrasa_id: madrasaId,
+      name: payload.name,
+      role: payload.role,
+      designation: payload.designation,
+      department: payload.department,
+      joinDate: payload.joinDate,
+      qualification: payload.qualification,
+      totalExperience: payload.totalExperience,
+      gender: payload.gender,
+      bloodGroup: payload.bloodGroup,
+      dob: payload.dob,
+      phone: payload.phone,
+      address: payload.address,
+      photo: payload.photo,
+      socialLinks: {
+        facebook: payload.facebook,
+        twitter: payload.twitter,
+        linkedin: payload.linkedin
+      },
+      paymentDetails: {
+        method: payload.paymentMethod,
+        bankName: payload.bankDetails?.bankName || payload.bankName,
+        holderName: payload.bankDetails?.holderName || payload.holderName,
+        branch: payload.bankDetails?.bankBranch || payload.bankBranch,
+        address: payload.bankDetails?.bankAddress || payload.bankAddress,
+        ifsc: payload.bankDetails?.ifscCode || payload.ifscCode,
+        accountNo: payload.bankDetails?.accountNo || payload.accountNo,
+        mobileMethods: payload.mobileMethods,
+        mobileNumber: payload.mobileNumber
+      },
+      status: "Active",
+      created_at: Date.now(),
+      updated_at: Date.now()
     };
 
     const newStaff = await db.collection("staff").insertOne(staffData);
-    
+
     // Update user with reference_id if user was created
     if (userId) {
-        await db.collection("users").updateOne(
-            { _id: userId },
-            { $set: { reference_id: newStaff.insertedId } }
-        );
+      await db.collection("users").updateOne(
+        { _id: userId },
+        { $set: { reference_id: newStaff.insertedId } }
+      );
     }
 
     // 3. Optional: Create Salary Setup if basic_salary is provided
     const basicSalary = parseFloat(payload.basic_salary);
     if (!isNaN(basicSalary) && basicSalary > 0) {
-        const houseRent = parseFloat(payload.house_rent || 0);
-        const medicalAllowance = parseFloat(payload.medical_allowance || 0);
-        const transportAllowance = parseFloat(payload.transport_allowance || 0);
-        const otherAllowance = parseFloat(payload.other_allowance || 0);
-        const totalSalary = basicSalary + houseRent + medicalAllowance + transportAllowance + otherAllowance;
+      const houseRent = parseFloat(payload.house_rent || 0);
+      const medicalAllowance = parseFloat(payload.medical_allowance || 0);
+      const transportAllowance = parseFloat(payload.transport_allowance || 0);
+      const otherAllowance = parseFloat(payload.other_allowance || 0);
+      const totalSalary = basicSalary + houseRent + medicalAllowance + transportAllowance + otherAllowance;
 
-        await db.collection("salary_setups").insertOne({
-            madrasa_id: madrasaId,
-            staff_id: newStaff.insertedId,
-            basic_salary: basicSalary,
-            house_rent: houseRent,
-            medical_allowance: medicalAllowance,
-            transport_allowance: transportAllowance,
-            other_allowance: otherAllowance,
-            total_salary: totalSalary,
-            effective_from: payload.joinDate ? new Date(payload.joinDate) : new Date(),
-            status: "active",
-            created_at: Date.now(),
-            updated_at: Date.now()
-        });
+      await db.collection("salary_setups").insertOne({
+        madrasa_id: madrasaId,
+        staff_id: newStaff.insertedId,
+        basic_salary: basicSalary,
+        house_rent: houseRent,
+        medical_allowance: medicalAllowance,
+        transport_allowance: transportAllowance,
+        other_allowance: otherAllowance,
+        total_salary: totalSalary,
+        effective_from: payload.joinDate ? new Date(payload.joinDate) : new Date(),
+        status: "active",
+        created_at: Date.now(),
+        updated_at: Date.now()
+      });
 
-        // Initialize payroll ledger with 0 balance
-        await db.collection("payroll_ledgers").insertOne({
-            staff_id: newStaff.insertedId,
-            madrasa_id: madrasaId,
-            balance: 0,
-            created_at: Date.now(),
-            updated_at: Date.now()
-        });
+      // Initialize payroll ledger with 0 balance
+      await db.collection("payroll_ledgers").insertOne({
+        staff_id: newStaff.insertedId,
+        madrasa_id: madrasaId,
+        balance: 0,
+        created_at: Date.now(),
+        updated_at: Date.now()
+      });
     }
-    
-    res.status(201).json({ 
-        success: true, 
-        message: "Staff created successfully",
-        data: {
-            staffId: newStaff.insertedId,
-            userId: userId
-        }
+
+    res.status(201).json({
+      success: true,
+      message: "Staff created successfully",
+      data: {
+        staffId: newStaff.insertedId,
+        userId: userId
+      }
     });
 
   } catch (error) {
@@ -204,7 +204,7 @@ const createStaff = async (req, res) => {
     res.status(500).json({ success: false, message: error.message });
   } finally {
     if (client) {
-        // await client.close();
+      // await client.close();
     }
   }
 };
@@ -215,51 +215,51 @@ const updateStaff = async (req, res) => {
   try {
     const payload = req.body;
     const madrasaId = req.user.madrasa_id ? new ObjectId(req.user.madrasa_id) : null;
-    
+
     // Multi-tenant validation - check staff exists and belongs to same madrasa
     const existingStaff = await mongo.fetchOne(db, "staff", { _id: req.params.id });
     if (!existingStaff) {
       return res.status(404).json({ success: false, message: "Staff not found" });
     }
-    
+
     if (req.user.role !== 'super_admin') {
       if (!madrasaId || !existingStaff.madrasa_id || existingStaff.madrasa_id.toString() !== madrasaId.toString()) {
         return res.status(403).json({ success: false, message: "Access denied. Staff belongs to different madrasa." });
       }
     }
-    
+
     // Prepare update object
     const updateFields = {
-        employeeID: payload.employeeID,
-        name: payload.name,
-        role: payload.role,
-        designation: payload.designation,
-        department: payload.department,
-        qualification: payload.qualification,
-        totalExperience: payload.totalExperience,
-        gender: payload.gender,
-        bloodGroup: payload.bloodGroup,
-        dob: payload.dob,
-        phone: payload.phone,
-        address: payload.address,
-        photo: payload.photo,
-        socialLinks: {
-            facebook: payload.facebook,
-            twitter: payload.twitter,
-            linkedin: payload.linkedin
-        },
-        paymentDetails: {
-            method: payload.paymentMethod,
-            bankName: payload.bankDetails?.bankName || payload.bankName,
-            holderName: payload.bankDetails?.holderName || payload.holderName,
-            branch: payload.bankDetails?.bankBranch || payload.bankBranch,
-            address: payload.bankDetails?.bankAddress || payload.bankAddress,
-            ifsc: payload.bankDetails?.ifscCode || payload.ifscCode,
-            accountNo: payload.bankDetails?.accountNo || payload.accountNo,
-            mobileMethods: payload.mobileMethods,
-            mobileNumber: payload.mobileNumber
-        },
-        updated_at: Date.now()
+      employeeID: payload.employeeID,
+      name: payload.name,
+      role: payload.role,
+      designation: payload.designation,
+      department: payload.department,
+      qualification: payload.qualification,
+      totalExperience: payload.totalExperience,
+      gender: payload.gender,
+      bloodGroup: payload.bloodGroup,
+      dob: payload.dob,
+      phone: payload.phone,
+      address: payload.address,
+      photo: payload.photo,
+      socialLinks: {
+        facebook: payload.facebook,
+        twitter: payload.twitter,
+        linkedin: payload.linkedin
+      },
+      paymentDetails: {
+        method: payload.paymentMethod,
+        bankName: payload.bankDetails?.bankName || payload.bankName,
+        holderName: payload.bankDetails?.holderName || payload.holderName,
+        branch: payload.bankDetails?.bankBranch || payload.bankBranch,
+        address: payload.bankDetails?.bankAddress || payload.bankAddress,
+        ifsc: payload.bankDetails?.ifscCode || payload.ifscCode,
+        accountNo: payload.bankDetails?.accountNo || payload.accountNo,
+        mobileMethods: payload.mobileMethods,
+        mobileNumber: payload.mobileNumber
+      },
+      updated_at: Date.now()
     };
 
     // If password provided in update, update User collection (omitted for brevity, can be added later)
@@ -270,11 +270,11 @@ const updateStaff = async (req, res) => {
       { _id: req.params.id },
       { $set: updateFields }
     );
-    
+
     if (!result) {
       return res.status(404).json({ success: false, message: "Staff not found" });
     }
-    
+
     res.status(200).json({ success: true, message: "Staff updated successfully" });
   } catch (error) {
     console.log(error);
@@ -286,103 +286,103 @@ const updateStaff = async (req, res) => {
 
 // Get all staff
 const getAllStaff = async (req, res) => {
-    const { db, client } = await mongoConnect();
-    try {
-      const madrasaId = req.user.madrasa_id ? new ObjectId(req.user.madrasa_id) : null;
-      
-      const query = {};
-      
-      // Multi-tenant filtering (Super Admin can see all)
-      if (req.user.role !== 'super_admin') {
-        if (!madrasaId) {
-          return res.status(403).json({ success: false, message: "Access denied. No madrasa associated." });
-        }
-        query.madrasa_id = madrasaId;
+  const { db, client } = await mongoConnect();
+  try {
+    const madrasaId = req.user.madrasa_id ? new ObjectId(req.user.madrasa_id) : null;
+
+    const query = {};
+
+    // Multi-tenant filtering (Super Admin can see all)
+    if (req.user.role !== 'super_admin') {
+      if (!madrasaId) {
+        return res.status(403).json({ success: false, message: "Access denied. No madrasa associated." });
       }
-      
-      if (req.query.role) query.role = req.query.role;
-      if (req.query.department) query.department = req.query.department;
-      if (req.query.status) query.status = req.query.status;
-  
-      const page = parseInt(req.query.page) || 0;
-      const limit = parseInt(req.query.limit) || 0;
-      
-      const staff = await mongo.fetchMany(db, "staff", query, {}, { created_at: -1 }, limit, page);
-      const total = await mongo.documentCount(db, "staff", query);
-      
-      res.status(200).json({ success: true, data: staff, total });
-    } catch (error) {
-      console.log(error);
-      res.status(500).json({ success: false, message: error.message });
-    } finally {
-      // await // client.close();
+      query.madrasa_id = madrasaId;
     }
+
+    if (req.query.role) query.role = req.query.role;
+    if (req.query.department) query.department = req.query.department;
+    if (req.query.status) query.status = req.query.status;
+
+    const page = parseInt(req.query.page) || 0;
+    const limit = parseInt(req.query.limit) || 0;
+
+    const staff = await mongo.fetchMany(db, "staff", query, {}, { created_at: -1 }, limit, page);
+    const total = await mongo.documentCount(db, "staff", query);
+
+    res.status(200).json({ success: true, data: staff, total });
+  } catch (error) {
+    console.log(error);
+    res.status(500).json({ success: false, message: error.message });
+  } finally {
+    // await // client.close();
+  }
 };
 
 // Get single staff by ID
 const getStaffById = async (req, res) => {
-    const { db, client } = await mongoConnect();
-    try {
-      const madrasaId = req.user.madrasa_id ? new ObjectId(req.user.madrasa_id) : null;
-      
-      const staff = await mongo.fetchOne(db, "staff", { _id: req.params.id });
-      if (!staff) {
-        return res.status(404).json({ success: false, message: "Staff not found" });
-      }
-      
-      // Multi-tenant validation (Super Admin can access all)
-      if (req.user.role !== 'super_admin') {
-        if (!madrasaId || !staff.madrasa_id || staff.madrasa_id.toString() !== madrasaId.toString()) {
-          return res.status(403).json({ success: false, message: "Access denied. Staff belongs to different madrasa." });
-        }
-      }
-      
-      // Fetch user email if linked
-      if (staff.userId) {
-          const user = await mongo.fetchOne(db, "users", { _id: staff.userId });
-          if(user) staff.userId = user; // Embed user object or just email
-      }
-      
-      res.status(200).json({ success: true, data: staff });
-    } catch (error) {
-      console.log(error);
-      res.status(500).json({ success: false, message: error.message });
-    } finally {
-      // await // client.close();
+  const { db, client } = await mongoConnect();
+  try {
+    const madrasaId = req.user.madrasa_id ? new ObjectId(req.user.madrasa_id) : null;
+
+    const staff = await mongo.fetchOne(db, "staff", { _id: req.params.id });
+    if (!staff) {
+      return res.status(404).json({ success: false, message: "Staff not found" });
     }
+
+    // Multi-tenant validation (Super Admin can access all)
+    if (req.user.role !== 'super_admin') {
+      if (!madrasaId || !staff.madrasa_id || staff.madrasa_id.toString() !== madrasaId.toString()) {
+        return res.status(403).json({ success: false, message: "Access denied. Staff belongs to different madrasa." });
+      }
+    }
+
+    // Fetch user email if linked
+    if (staff.userId) {
+      const user = await mongo.fetchOne(db, "users", { _id: staff.userId });
+      if (user) staff.userId = user; // Embed user object or just email
+    }
+
+    res.status(200).json({ success: true, data: staff });
+  } catch (error) {
+    console.log(error);
+    res.status(500).json({ success: false, message: error.message });
+  } finally {
+    // await // client.close();
+  }
 };
 
 // Delete staff
 const deleteStaff = async (req, res) => {
-    const { db, client } = await mongoConnect();
-    try {
-      const madrasaId = req.user.madrasa_id ? new ObjectId(req.user.madrasa_id) : null;
-      
-      // Multi-tenant validation - check staff exists and belongs to same madrasa
-      const existingStaff = await mongo.fetchOne(db, "staff", { _id: req.params.id });
-      if (!existingStaff) {
-        return res.status(404).json({ success: false, message: "Staff not found" });
-      }
-      
-      if (req.user.role !== 'super_admin') {
-        if (!madrasaId || !existingStaff.madrasa_id || existingStaff.madrasa_id.toString() !== madrasaId.toString()) {
-          return res.status(403).json({ success: false, message: "Access denied. Staff belongs to different madrasa." });
-        }
-      }
-      
-      const result = await mongo.deleteData(db, "staff", { _id: req.params.id });
-      
-      if (!result) {
-        return res.status(404).json({ success: false, message: "Staff not found" });
-      }
-      
-      res.status(200).json({ success: true, message: "Staff deleted successfully" });
-    } catch (error) {
-      console.log(error);
-      res.status(500).json({ success: false, message: error.message });
-    } finally {
-      // await // client.close();
+  const { db, client } = await mongoConnect();
+  try {
+    const madrasaId = req.user.madrasa_id ? new ObjectId(req.user.madrasa_id) : null;
+
+    // Multi-tenant validation - check staff exists and belongs to same madrasa
+    const existingStaff = await mongo.fetchOne(db, "staff", { _id: req.params.id });
+    if (!existingStaff) {
+      return res.status(404).json({ success: false, message: "Staff not found" });
     }
+
+    if (req.user.role !== 'super_admin') {
+      if (!madrasaId || !existingStaff.madrasa_id || existingStaff.madrasa_id.toString() !== madrasaId.toString()) {
+        return res.status(403).json({ success: false, message: "Access denied. Staff belongs to different madrasa." });
+      }
+    }
+
+    const result = await mongo.deleteData(db, "staff", { _id: req.params.id });
+
+    if (!result) {
+      return res.status(404).json({ success: false, message: "Staff not found" });
+    }
+
+    res.status(200).json({ success: true, message: "Staff deleted successfully" });
+  } catch (error) {
+    console.log(error);
+    res.status(500).json({ success: false, message: error.message });
+  } finally {
+    // await // client.close();
+  }
 };
 
 // Routes with Middleware

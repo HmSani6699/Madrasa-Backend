@@ -1,5 +1,5 @@
 const router = require("express").Router();
-const root = require("app-root-path");
+const root = process.cwd();
 const { ObjectId } = require("mongodb");
 
 const mongo = require(`${root}/services/mongo-crud`);
@@ -48,7 +48,7 @@ const createExamName = async (req, res) => {
       created_at: Date.now(),
       updated_at: Date.now()
     };
-    
+
     const examName = await mongo.insertOne(db, "exam_names", examNameData);
     res.status(201).json({ success: true, data: examName });
   } catch (error) {
@@ -74,11 +74,11 @@ const updateExamName = async (req, res) => {
         }
       }
     );
-    
+
     if (!result) {
       return res.status(404).json({ success: false, message: "Exam name not found" });
     }
-    
+
     res.status(200).json({ success: true, message: "Exam name updated successfully" });
   } catch (error) {
     console.log(error);
@@ -93,11 +93,11 @@ const deleteExamName = async (req, res) => {
   const { db, client } = await mongoConnect();
   try {
     const result = await mongo.deleteData(db, "exam_names", { _id: new ObjectId(req.params.id), madrasa_id: req.user.madrasa_id });
-    
+
     if (!result) {
       return res.status(404).json({ success: false, message: "Exam name not found" });
     }
-    
+
     res.status(200).json({ success: true, message: "Exam name deleted successfully" });
   } catch (error) {
     console.log(error);

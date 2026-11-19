@@ -1,5 +1,5 @@
 const router = require("express").Router();
-const root = require("app-root-path");
+const root = process.cwd();
 const Joi = require("joi");
 const validate = require(`${root}/middleware/validate`);
 
@@ -25,10 +25,10 @@ const getAllBooks = async (req, res) => {
     if (req.query.category) query.category = req.query.category;
     if (req.query.author) query.author = { $regex: req.query.author, $options: "i" };
     if (req.query.title) query.title = { $regex: req.query.title, $options: "i" };
-    
+
     const page = parseInt(req.query.page) || 0;
     const limit = parseInt(req.query.limit) || 0;
-    
+
     const books = await mongo.fetchMany(db, "books", query, {}, { title: 1 }, limit, page);
     const total = await mongo.documentCount(db, "books", query);
     res.status(200).json({ success: true, data: books, total });
@@ -68,7 +68,7 @@ const createBook = async (req, res) => {
       created_at: Date.now(),
       updated_at: Date.now()
     };
-    
+
     const book = await mongo.insertOne(db, "books", bookData);
     res.status(201).json({ success: true, data: book });
   } catch (error) {
@@ -86,10 +86,10 @@ const updateBook = async (req, res) => {
     // If quantity is updated, need to adjust available_qty intelligently
     // For simplicity, we assume robust manual management if total quantity changes
     // or we calculate valid difference.
-    
+
     // Simple approach: Update fields. If quantity increases, increase available.
     // If quantity decreases, ensure it doesn't drop below issued count (total - available).
-    
+
     const result = await mongo.updateData(
       db,
       "books",
@@ -101,11 +101,11 @@ const updateBook = async (req, res) => {
         }
       }
     );
-    
+
     if (!result) {
       return res.status(404).json({ success: false, message: "Book not found" });
     }
-    
+
     res.status(200).json({ success: true, message: "Book updated successfully" });
   } catch (error) {
     console.log(error);
@@ -121,13 +121,13 @@ const deleteBook = async (req, res) => {
   try {
     // Check if issued
     // const issued = await mongo.documentCount(db, "book_issues", { book_id: req.params.id, madrasa_id: req.user.madrasa_id, status: "Issued" });
-    
+
     const result = await mongo.deleteData(db, "books", { _id: req.params.id, madrasa_id: req.user.madrasa_id });
-    
+
     if (!result) {
       return res.status(404).json({ success: false, message: "Book not found" });
     }
-    
+
     res.status(200).json({ success: true, message: "Book deleted successfully" });
   } catch (error) {
     console.log(error);

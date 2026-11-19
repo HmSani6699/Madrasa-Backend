@@ -1,5 +1,5 @@
 const router = require("express").Router();
-const root = require("app-root-path");
+const root = process.cwd();
 const { ObjectId } = require("mongodb");
 const Joi = require("joi");
 const validate = require(`${root}/middleware/validate`);
@@ -33,7 +33,7 @@ const getAllSubjects = async (req, res) => {
   const { db, client } = await mongoConnect();
   try {
     const query = { madrasa_id: req.user.madrasa_id };
-    
+
     // Add search functionality
     if (req.query.search) {
       query.$or = [
@@ -41,15 +41,15 @@ const getAllSubjects = async (req, res) => {
         { code: { $regex: req.query.search, $options: "i" } }
       ];
     }
-    
+
     // Add filters
     if (req.query.class_id) query.class_id = req.query.class_id;
     if (req.query.section_id) query.section_id = req.query.section_id;
     if (req.query.status) query.status = req.query.status;
-    if (req.query.type) query.type = req.query.type; 
-    
+    if (req.query.type) query.type = req.query.type;
+
     const subjects = await mongo.fetchMany(db, "subjects", query, {}, { name: 1 });
-    
+
     // Populate class and section names for the list
     for (let subject of subjects) {
       if (subject.class_id) {
@@ -80,11 +80,11 @@ const getSubjectById = async (req, res) => {
     if (!subject) {
       return res.status(404).json({ success: false, message: "Subject not found" });
     }
-    
+
     // Optional: Populate Class info
     if (subject.class_id) {
-       const classInfo = await mongo.fetchOne(db, "classes", { _id: new ObjectId(subject.class_id), madrasa_id: req.user.madrasa_id });
-       subject.class = classInfo; 
+      const classInfo = await mongo.fetchOne(db, "classes", { _id: new ObjectId(subject.class_id), madrasa_id: req.user.madrasa_id });
+      subject.class = classInfo;
     }
 
     res.status(200).json({ success: true, data: subject });
@@ -106,7 +106,7 @@ const createSubject = async (req, res) => {
       created_at: Date.now(),
       updated_at: Date.now()
     };
-    
+
     const subject = await mongo.insertOne(db, "subjects", subjectData);
     res.status(201).json({ success: true, data: subject });
   } catch (error) {
@@ -132,11 +132,11 @@ const updateSubject = async (req, res) => {
         }
       }
     );
-    
+
     if (!result) {
       return res.status(404).json({ success: false, message: "Subject not found" });
     }
-    
+
     res.status(200).json({ success: true, message: "Subject updated successfully" });
   } catch (error) {
     console.log(error);
@@ -151,11 +151,11 @@ const deleteSubject = async (req, res) => {
   const { db, client } = await mongoConnect();
   try {
     const result = await mongo.deleteData(db, "subjects", { _id: new ObjectId(req.params.id), madrasa_id: req.user.madrasa_id });
-    
+
     if (!result) {
       return res.status(404).json({ success: false, message: "Subject not found" });
     }
-    
+
     res.status(200).json({ success: true, message: "Subject deleted successfully" });
   } catch (error) {
     console.log(error);
@@ -176,12 +176,12 @@ const bulkAssignSubjects = async (req, res) => {
     // Or we just insert ones that don't exist
     // It's usually better to just insert new ones and maybe delete ones not in the list if the UI sends the full list.
     // The user's request: "then jegolo select korbo oi golo oi class and section er jonno antry hobe"
-    
+
     const existingSubjects = await mongo.fetchMany(db, "subjects", { class_id, section_id, madrasa_id });
     const existingCodes = existingSubjects.map(s => s.code);
-    
+
     const incomingCodes = subjects.map(s => s.code);
-    
+
     // Subjects to delete (exist in DB but not in incoming list)
     const subjectsToDelete = existingSubjects.filter(s => !incomingCodes.includes(s.code)).map(s => s._id);
     if (subjectsToDelete.length > 0) {

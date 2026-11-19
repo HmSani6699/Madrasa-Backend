@@ -1,5 +1,5 @@
 const router = require("express").Router();
-const root = require("app-root-path");
+const root = process.cwd();
 const { ObjectId } = require("mongodb");
 const Joi = require("joi");
 const validate = require(`${root}/middleware/validate`);
@@ -28,10 +28,10 @@ const getAllHomework = async (req, res) => {
     if (req.query.section_id) query.section_id = req.query.section_id;
     if (req.query.subject_id) query.subject_id = req.query.subject_id;
     if (req.query.teacher_id) query.teacher_id = req.query.teacher_id;
-    
+
     const page = parseInt(req.query.page) || 0;
     const limit = parseInt(req.query.limit) || 0;
-    
+
     const homework = await mongo.fetchMany(db, "homework", query, {}, { assignedDate: -1 }, limit, page);
     const total = await mongo.documentCount(db, "homework", query);
     res.status(200).json({ success: true, data: homework, total });
@@ -70,7 +70,7 @@ const createHomework = async (req, res) => {
       created_at: Date.now(),
       updated_at: Date.now()
     };
-    
+
     const homework = await mongo.insertOne(db, "homework", homeworkData);
     res.status(201).json({ success: true, data: homework });
   } catch (error) {
@@ -96,11 +96,11 @@ const updateHomework = async (req, res) => {
         }
       }
     );
-    
+
     if (!result) {
       return res.status(404).json({ success: false, message: "Homework not found" });
     }
-    
+
     res.status(200).json({ success: true, message: "Homework updated successfully" });
   } catch (error) {
     console.log(error);
@@ -115,11 +115,11 @@ const deleteHomework = async (req, res) => {
   const { db, client } = await mongoConnect();
   try {
     const result = await mongo.deleteData(db, "homework", { _id: new ObjectId(req.params.id), madrasa_id: req.user.madrasa_id });
-    
+
     if (!result) {
       return res.status(404).json({ success: false, message: "Homework not found" });
     }
-    
+
     res.status(200).json({ success: true, message: "Homework deleted successfully" });
   } catch (error) {
     console.log(error);

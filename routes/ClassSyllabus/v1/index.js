@@ -1,6 +1,6 @@
 const router = require("express").Router();
 const { ObjectId } = require("mongodb");
-const root = require("app-root-path");
+const root = process.cwd();
 const Joi = require("joi");
 const validate = require(`${root}/middleware/validate`);
 
@@ -58,7 +58,7 @@ const createSyllabus = async (req, res) => {
       created_at: Date.now(),
       updated_at: Date.now()
     };
-    
+
     const newSyllabus = await mongo.insertOne(db, "syllabuses", syllabusData);
     res.status(201).json({ success: true, data: newSyllabus });
   } catch (error) {
@@ -84,11 +84,11 @@ const updateSyllabus = async (req, res) => {
         }
       }
     );
-    
+
     if (!result) {
       return res.status(404).json({ success: false, message: "Syllabus not found" });
     }
-    
+
     res.status(200).json({ success: true, message: "Syllabus updated successfully" });
   } catch (error) {
     console.log(error);
@@ -103,11 +103,11 @@ const deleteSyllabus = async (req, res) => {
   const { db, client } = await mongoConnect();
   try {
     const result = await mongo.deleteData(db, "syllabuses", { _id: new ObjectId(req.params.id), madrasa_id: req.user.madrasa_id });
-    
+
     if (!result) {
       return res.status(404).json({ success: false, message: "Syllabus not found" });
     }
-    
+
     res.status(200).json({ success: true, message: "Syllabus deleted successfully" });
   } catch (error) {
     console.log(error);
