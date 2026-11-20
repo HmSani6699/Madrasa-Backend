@@ -35,4 +35,8 @@ router.patch("/demo-requests/:id/status", demoRequestController.updateDemoReques
 router.put("/demo-requests/:id/status", demoRequestController.updateDemoRequestStatus);
 router.delete("/demo-requests/:id", demoRequestController.deleteDemoRequest);
 
+// Demo Video Configuration Routes
+router.get("/demo-video", demoRequestController.getDemoVideoSettings);
+router.put("/demo-video", demoRequestController.updateDemoVideoSettings);
+
 module.exports = router;

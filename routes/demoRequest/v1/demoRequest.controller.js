@@ -2,6 +2,39 @@ const root = process.cwd();
 const mongoConnect = require(`${root}/services/mongo-connect`);
 const { ObjectId } = require("mongodb");
 
+const DEFAULT_DEMO_VIDEO = {
+  videoUrl: "https://www.youtube.com/watch?v=ScMzIvxBSi4",
+  embedUrl: "https://www.youtube-nocookie.com/embed/ScMzIvxBSi4",
+  title: "মাদ্রাসা ম্যানেজমেন্ট সফটওয়্যার পরিচিতি ও ডেমো ভিডিও",
+  description: "ভিডিওর মাধ্যমে সফটওয়্যারটির সকল আধুনিক ফিচার ও ব্যবহারবিধি বিস্তারিত দেখে নিন",
+  isActive: true,
+  updatedAt: new Date()
+};
+
+const getEmbedUrl = (url) => {
+  if (!url || typeof url !== "string") return "";
+  const trimmed = url.trim();
+
+  // If already an embed url
+  if (trimmed.includes("/embed/")) {
+    return trimmed;
+  }
+
+  // YouTube match
+  const ytMatch = trimmed.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=|shorts\/))([\w-]{11})/);
+  if (ytMatch && ytMatch[1]) {
+    return `https://www.youtube-nocookie.com/embed/${ytMatch[1]}`;
+  }
+
+  // Vimeo match
+  const vimeoMatch = trimmed.match(/vimeo\.com\/(?:video\/)?([0-9]+)/);
+  if (vimeoMatch && vimeoMatch[1]) {
+    return `https://player.vimeo.com/video/${vimeoMatch[1]}`;
+  }
+
+  return trimmed;
+};
+
 const demoRequestController = {
   // Public: Submit a new demo request
   submitDemoRequest: async (req, res) => {
@@ -186,6 +219,104 @@ const demoRequestController = {
       return res.status(500).json({
         success: false,
         message: "Failed to delete demo request"
+      });
+    }
+  },
+
+  // Public: Get dynamic demo video settings
+  getPublicDemoVideo: async (req, res) => {
+    try {
+      const { db } = await mongoConnect();
+      let videoSettings = await db.collection("demo_video_settings").findOne();
+      if (!videoSettings) {
+        videoSettings = DEFAULT_DEMO_VIDEO;
+      }
+      return res.status(200).json({
+        success: true,
+        data: videoSettings
+      });
+    } catch (error) {
+      console.error("Get Public Demo Video Error:", error);
+      return res.status(200).json({
+        success: true,
+        data: DEFAULT_DEMO_VIDEO
+      });
+    }
+  },
+
+  // Super Admin: Get demo video settings
+  getDemoVideoSettings: async (req, res) => {
+    try {
+      const { db } = await mongoConnect();
+      let videoSettings = await db.collection("demo_video_settings").findOne();
+      if (!videoSettings) {
+        await db.collection("demo_video_settings").insertOne({
+          ...DEFAULT_DEMO_VIDEO,
+          createdAt: new Date()
+        });
+        videoSettings = await db.collection("demo_video_settings").findOne();
+      }
+      return res.status(200).json({
+        success: true,
+        data: videoSettings
+      });
+    } catch (error) {
+      console.error("Get Demo Video Settings Error:", error);
+      return res.status(500).json({
+        success: false,
+        message: "ভিডিও সেটিংস লোড করতে ব্যর্থ হয়েছে"
+      });
+    }
+  },
+
+  // Super Admin: Update demo video settings
+  updateDemoVideoSettings: async (req, res) => {
+    try {
+      const { videoUrl, title, description, isActive } = req.body;
+      if (!videoUrl || !videoUrl.trim()) {
+        return res.status(400).json({
+          success: false,
+          message: "ভিডিও লিঙ্ক প্রদান করা আবশ্যক"
+        });
+      }
+
+      const embedUrl = getEmbedUrl(videoUrl);
+      const updateData = {
+        videoUrl: videoUrl.trim(),
+        embedUrl,
+        title: title?.trim() || "মাদ্রাসা ম্যানেজমেন্ট সফটওয়্যার পরিচিতি ও ডেমো ভিডিও",
+        description: description?.trim() || "ভিডিওর মাধ্যমে সফটওয়্যারটির সকল আধুনিক ফিচার ও ব্যবহারবিধি বিস্তারিত দেখে নিন",
+        isActive: isActive !== undefined ? Boolean(isActive) : true,
+        updatedAt: new Date()
+      };
+
+      const { db } = await mongoConnect();
+      let videoSettings = await db.collection("demo_video_settings").findOne();
+
+      if (!videoSettings) {
+        await db.collection("demo_video_settings").insertOne({
+          ...updateData,
+          createdAt: new Date()
+        });
+      } else {
+        await db.collection("demo_video_settings").updateOne(
+          { _id: videoSettings._id },
+          { $set: updateData }
+        );
+      }
+
+      const updated = await db.collection("demo_video_settings").findOne();
+
+      return res.status(200).json({
+        success: true,
+        message: "ভিডিও সেটিংস সফলভাবে আপডেট হয়েছে",
+        data: updated
+      });
+    } catch (error) {
+      console.error("Update Demo Video Settings Error:", error);
+      return res.status(500).json({
+        success: false,
+        message: "ভিডিও সেটিংস আপডেট করতে সমস্যা হয়েছে"
       });
     }
   }
