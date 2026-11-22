@@ -4,6 +4,7 @@ const plansController = require("./plans.controller");
 const smsController = require("./sms.controller");
 const demoRequestController = require("../../demoRequest/v1/demoRequest.controller");
 const reviewController = require("./review.controller");
+const contactController = require("../../contact/v1/contact.controller");
 const authMiddleware = require("../../../middleware/authenticate");
 const rbacMiddleware = require("../../../middleware/rbacMiddleware");
 
@@ -47,5 +48,11 @@ router.post("/reviews", reviewController.createReview);
 router.put("/reviews/:id", reviewController.updateReview);
 router.patch("/reviews/:id/status", reviewController.toggleReviewStatus);
 router.delete("/reviews/:id", reviewController.deleteReview);
+
+// Contact Messages Management Routes
+router.get("/contact-messages", contactController.getAllContactMessages);
+router.patch("/contact-messages/:id/status", contactController.updateContactMessageStatus);
+router.put("/contact-messages/:id/status", contactController.updateContactMessageStatus);
+router.delete("/contact-messages/:id", contactController.deleteContactMessage);
 
 module.exports = router;

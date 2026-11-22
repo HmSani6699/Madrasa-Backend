@@ -455,7 +455,8 @@ const routeDefinitions = [
   ["/api", "ClassSyllabus"],
   ["/api/fee-type", "FeeType"],
   ["/api/demo-request", "demoRequest"],
-  ["/api/reviews", "review"]
+  ["/api/reviews", "review"],
+  ["/api/contact", "contact"]
 ];
 
 /* =========================
