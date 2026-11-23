@@ -5,6 +5,7 @@ const smsController = require("./sms.controller");
 const demoRequestController = require("../../demoRequest/v1/demoRequest.controller");
 const reviewController = require("./review.controller");
 const contactController = require("../../contact/v1/contact.controller");
+const additionalServicesController = require("./additionalServices.controller");
 const authMiddleware = require("../../../middleware/authenticate");
 const rbacMiddleware = require("../../../middleware/rbacMiddleware");
 
@@ -41,6 +42,14 @@ router.delete("/demo-requests/:id", demoRequestController.deleteDemoRequest);
 router.get("/demo-video", demoRequestController.getDemoVideoSettings);
 router.put("/demo-video", demoRequestController.updateDemoVideoSettings);
 
+// Tutorial Videos Management Routes (per menu/submenu)
+const tutorialVideoController = require("../../tutorialVideo/v1/tutorialVideo.controller");
+router.get("/tutorial-videos", tutorialVideoController.getAllTutorialVideos);
+router.post("/tutorial-videos", tutorialVideoController.upsertTutorialVideo);
+router.put("/tutorial-videos/:id", tutorialVideoController.upsertTutorialVideo);
+router.patch("/tutorial-videos/:id/status", tutorialVideoController.togglePublishStatus);
+router.delete("/tutorial-videos/:id", tutorialVideoController.deleteTutorialVideo);
+
 // Video Reviews Management Routes
 router.get("/reviews", reviewController.getAllReviews);
 router.get("/reviews/:id", reviewController.getReviewById);
@@ -54,5 +63,13 @@ router.get("/contact-messages", contactController.getAllContactMessages);
 router.patch("/contact-messages/:id/status", contactController.updateContactMessageStatus);
 router.put("/contact-messages/:id/status", contactController.updateContactMessageStatus);
 router.delete("/contact-messages/:id", contactController.deleteContactMessage);
+
+// Additional Services & Products Management Routes
+router.get("/additional-services", additionalServicesController.getAllServices);
+router.get("/additional-services/:id", additionalServicesController.getServiceById);
+router.post("/additional-services", additionalServicesController.createService);
+router.put("/additional-services/:id", additionalServicesController.updateService);
+router.patch("/additional-services/:id/status", additionalServicesController.toggleServiceStatus);
+router.delete("/additional-services/:id", additionalServicesController.deleteService);
 
 module.exports = router;

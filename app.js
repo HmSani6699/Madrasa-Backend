@@ -456,7 +456,9 @@ const routeDefinitions = [
   ["/api/fee-type", "FeeType"],
   ["/api/demo-request", "demoRequest"],
   ["/api/reviews", "review"],
-  ["/api/contact", "contact"]
+  ["/api/contact", "contact"],
+  ["/api/additional-services", "additionalService"],
+  ["/api/tutorial-videos", "tutorialVideo"]
 ];
 
 /* =========================
