@@ -6,6 +6,10 @@ const validate = require(`${root}/middleware/validate`);
 
 const mongo = require(`${root}/services/mongo-crud`);
 const mongoConnect = require(`${root}/services/mongo-connect`);
+const {
+  syncStudentBoardingFromAdmission,
+  getMadrasaFilter,
+} = require(`${root}/routes/boarding/v1/helpers`);
 
 // Joi Schema for Student
 const studentSchema = Joi.object({
@@ -34,6 +38,14 @@ const studentSchema = Joi.object({
   hostel: Joi.object({
     required: Joi.boolean(),
     roomType: Joi.string().allow("")
+  }).optional(),
+  boarding: Joi.object({
+    enrolled: Joi.boolean().default(false),
+    residential_type: Joi.string().valid("Residential", "Non-Residential", "Lillah").default("Residential"),
+    meal_plan_id: Joi.string().default("full_3_meals"),
+    monthly_fee: Joi.number().min(0).default(0),
+    waiver_percent: Joi.number().min(0).max(100).default(0),
+    billing_mode: Joi.string().valid("Fixed", "MealRate").default("Fixed"),
   }).optional(),
   fees: Joi.object().optional(),
 
@@ -177,6 +189,21 @@ const getStudentById = async (req, res) => {
       student.section = section;
     }
 
+    const boardingRecord = await db.collection("boarding_students").findOne({
+      student_id: student._id.toString(),
+      madrasa_id: getMadrasaFilter(req.user.madrasa_id),
+    });
+    if (boardingRecord) {
+      student.boarding = {
+        enrolled: boardingRecord.status === "Active",
+        residential_type: boardingRecord.residential_type || "Residential",
+        meal_plan_id: boardingRecord.meal_plan_id || "full_3_meals",
+        monthly_fee: boardingRecord.monthly_fee ?? 0,
+        waiver_percent: boardingRecord.waiver_percent ?? 0,
+        billing_mode: boardingRecord.billing_mode || "Fixed",
+      };
+    }
+
     res.status(200).json({ success: true, data: student });
   } catch (error) {
     console.error("Get Student Error:", error);
@@ -261,6 +288,13 @@ const updateStudent = async (req, res) => {
       return res.status(404).json({ success: false, message: "Student not found" });
     }
 
+    if (payload.boarding || payload.hostel || payload.fees) {
+      const updatedStudent = await db.collection("students").findOne({ _id: studentId, madrasa_id: madrasaId });
+      if (updatedStudent) {
+        await syncStudentBoardingFromAdmission(db, req.user.madrasa_id, updatedStudent);
+      }
+    }
+
     res.status(200).json({ success: true, message: "Student updated successfully" });
   } catch (error) {
     console.error("Update Student Error:", error);
@@ -288,6 +322,12 @@ const deleteStudent = async (req, res) => {
 
     // 2. Delete student
     await db.collection("students").deleteOne({ _id: studentId });
+
+    // Delete associated boarding record
+    await db.collection("boarding_students").deleteMany({
+      student_id: studentId.toString(),
+      madrasa_id: getMadrasaFilter(req.user.madrasa_id),
+    });
 
     // 3. Delete associated user
     if (student.student_id) {

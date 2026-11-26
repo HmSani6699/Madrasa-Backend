@@ -10,6 +10,11 @@ const authService = require(`${root}/services/auth.service`);
 
 const mongo = require(`${root}/services/mongo-crud`);
 const mongoConnect = require(`${root}/services/mongo-connect`);
+const {
+    syncStudentBoardingFromAdmission,
+    getMadrasaFilter,
+    findBoardingFeeAmount,
+} = require(`${root}/routes/boarding/v1/helpers`);
 
 // Joi Schema for Admission Payload
 const admissionSchema = Joi.object({
@@ -47,6 +52,14 @@ const admissionSchema = Joi.object({
             hostel: Joi.object({
                 required: Joi.boolean(),
                 roomType: Joi.string().allow("")
+            }).optional(),
+            boarding: Joi.object({
+                enrolled: Joi.boolean().default(false),
+                residential_type: Joi.string().valid("Residential", "Non-Residential", "Lillah").default("Residential"),
+                meal_plan_id: Joi.string().default("full_3_meals"),
+                monthly_fee: Joi.number().min(0).default(0),
+                waiver_percent: Joi.number().min(0).max(100).default(0),
+                billing_mode: Joi.string().valid("Fixed", "MealRate").default("Fixed"),
             }).optional(),
             fees: Joi.object().optional(),
             note: Joi.string().allow(""),
@@ -165,8 +178,18 @@ const createAdmission = async (req, res) => {
                 updated_at: Date.now()
             });
 
+            const boardingCfg = studentData.boarding;
+            const inferredBoardingFee = findBoardingFeeAmount(studentData.fees);
+            const isHostelRequired = boardingCfg
+                ? Boolean(boardingCfg.enrolled && boardingCfg.residential_type !== "Non-Residential")
+                : Boolean(studentData.hostel?.required || (inferredBoardingFee !== null && inferredBoardingFee > 0));
+
             const studentDoc = {
                 ...studentData,
+                hostel: {
+                    required: isHostelRequired,
+                    roomType: studentData.hostel?.roomType || "",
+                },
                 userId: studentUser.insertedId,
                 guardian_id: guardianId,
                 madrasa_id: madrasaId,
@@ -187,12 +210,16 @@ const createAdmission = async (req, res) => {
         const studentsResult = await db.collection("students").insertMany(studentDocs);
         const studentIds = Object.values(studentsResult.insertedIds);
 
-        // Update Users with reference_ids
+        // Update Users with reference_ids and auto-enroll boarding students
         for (let i = 0; i < studentIds.length; i++) {
             await db.collection("users").updateOne(
                 { _id: studentUserUpdates[i].userId },
                 { $set: { reference_id: studentIds[i] } }
             );
+            await syncStudentBoardingFromAdmission(db, req.user.madrasa_id, {
+                _id: studentIds[i],
+                ...studentDocs[i],
+            });
         }
 
         res.status(201).json({
@@ -244,10 +271,26 @@ const updateAdmission = async (req, res) => {
             for (const student of payload.students) {
                 if (student._id) {
                     const { _id, userId, ...updateData } = student;
+                    if (updateData.boarding) {
+                        updateData.hostel = {
+                            required: Boolean(
+                                updateData.boarding.enrolled &&
+                                updateData.boarding.residential_type !== "Non-Residential"
+                            ),
+                            roomType: updateData.hostel?.roomType || "",
+                        };
+                    }
                     await db.collection("students").updateOne(
                         { _id: new ObjectId(_id), madrasa_id: madrasaId },
                         { $set: { ...updateData, updated_at: Date.now() } }
                     );
+                    const updatedStudent = await db.collection("students").findOne({
+                        _id: new ObjectId(_id),
+                        madrasa_id: madrasaId,
+                    });
+                    if (updatedStudent) {
+                        await syncStudentBoardingFromAdmission(db, req.user.madrasa_id, updatedStudent);
+                    }
                 }
             }
         }
@@ -355,6 +398,12 @@ const deleteAdmission = async (req, res) => {
 
         // Delete student record
         await db.collection("students").deleteOne({ _id: studentId });
+
+        // Delete associated boarding record
+        await db.collection("boarding_students").deleteMany({
+            student_id: studentId.toString(),
+            madrasa_id: getMadrasaFilter(req.user.madrasa_id),
+        });
 
         // Delete student user
         if (student.userId) {
