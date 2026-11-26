@@ -10,6 +10,9 @@ const {
   syncStudentBoardingFromAdmission,
   getMadrasaFilter,
 } = require(`${root}/routes/boarding/v1/helpers`);
+const {
+  syncStudentTransportFromAdmission,
+} = require(`${root}/routes/transport/v1/helpers`);
 
 // Joi Schema for Student
 const studentSchema = Joi.object({
@@ -33,7 +36,12 @@ const studentSchema = Joi.object({
   // Modules
   transport: Joi.object({
     required: Joi.boolean(),
-    route: Joi.string().allow("")
+    route: Joi.string().allow("", null),
+    route_id: Joi.string().allow("", null),
+    stoppage: Joi.string().allow("", null),
+    trip_type: Joi.string().valid("Both", "Pickup", "Drop").default("Both"),
+    monthly_fee: Joi.number().min(0).allow(null, ""),
+    waiver_percent: Joi.number().min(0).max(100).default(0),
   }).optional(),
   hostel: Joi.object({
     required: Joi.boolean(),
@@ -100,8 +108,15 @@ const getAllStudents = async (req, res) => {
       { $limit: limit },
       {
         $addFields: {
-          classObjectId: { $cond: [{ $and: [{ $ne: ["$class_id", null] }, { $ne: ["$class_id", ""] }] }, { $toObjectId: "$class_id" }, null] },
-          sectionObjectId: { $cond: [{ $and: [{ $ne: ["$section_id", null] }, { $ne: ["$section_id", ""] }] }, { $toObjectId: "$section_id" }, null] }
+          classObjectId: {
+            $convert: { input: "$class_id", to: "objectId", onError: null, onNull: null }
+          },
+          sectionObjectId: {
+            $convert: { input: "$section_id", to: "objectId", onError: null, onNull: null }
+          },
+          guardianObjectId: {
+            $convert: { input: "$guardian_id", to: "objectId", onError: null, onNull: null }
+          }
         }
       },
       {
@@ -129,7 +144,7 @@ const getAllStudents = async (req, res) => {
       {
         $lookup: {
           from: "parents",
-          let: { gid: "$guardian_id" },
+          let: { gid: "$guardianObjectId" },
           pipeline: [
             { $match: { $expr: { $eq: ["$_id", "$$gid"] } } },
             { $project: { fatherName: 1, contact: 1, motherName: 1 } } // Project only what list/modals need
@@ -201,6 +216,22 @@ const getStudentById = async (req, res) => {
         monthly_fee: boardingRecord.monthly_fee ?? 0,
         waiver_percent: boardingRecord.waiver_percent ?? 0,
         billing_mode: boardingRecord.billing_mode || "Fixed",
+      };
+    }
+
+    const transportRecord = await db.collection("transport_students").findOne({
+      student_id: student._id.toString(),
+      madrasa_id: getMadrasaFilter(req.user.madrasa_id),
+    });
+    if (transportRecord) {
+      student.transport = {
+        required: transportRecord.status === "Active",
+        route: transportRecord.route_name || "",
+        route_id: transportRecord.route_id || "",
+        stoppage: transportRecord.stoppage || "",
+        trip_type: transportRecord.trip_type || "Both",
+        monthly_fee: transportRecord.monthly_fee ?? 0,
+        waiver_percent: transportRecord.waiver_percent ?? 0,
       };
     }
 
@@ -288,10 +319,15 @@ const updateStudent = async (req, res) => {
       return res.status(404).json({ success: false, message: "Student not found" });
     }
 
-    if (payload.boarding || payload.hostel || payload.fees) {
+    if (payload.boarding || payload.hostel || payload.transport || payload.fees) {
       const updatedStudent = await db.collection("students").findOne({ _id: studentId, madrasa_id: madrasaId });
       if (updatedStudent) {
-        await syncStudentBoardingFromAdmission(db, req.user.madrasa_id, updatedStudent);
+        if (payload.boarding || payload.hostel || payload.fees) {
+          await syncStudentBoardingFromAdmission(db, req.user.madrasa_id, updatedStudent);
+        }
+        if (payload.transport || payload.fees) {
+          await syncStudentTransportFromAdmission(db, req.user.madrasa_id, updatedStudent);
+        }
       }
     }
 
@@ -323,8 +359,12 @@ const deleteStudent = async (req, res) => {
     // 2. Delete student
     await db.collection("students").deleteOne({ _id: studentId });
 
-    // Delete associated boarding record
+    // Delete associated boarding & transport records
     await db.collection("boarding_students").deleteMany({
+      student_id: studentId.toString(),
+      madrasa_id: getMadrasaFilter(req.user.madrasa_id),
+    });
+    await db.collection("transport_students").deleteMany({
       student_id: studentId.toString(),
       madrasa_id: getMadrasaFilter(req.user.madrasa_id),
     });

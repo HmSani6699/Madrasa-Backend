@@ -15,6 +15,9 @@ const {
     getMadrasaFilter,
     findBoardingFeeAmount,
 } = require(`${root}/routes/boarding/v1/helpers`);
+const {
+    syncStudentTransportFromAdmission,
+} = require(`${root}/routes/transport/v1/helpers`);
 
 // Joi Schema for Admission Payload
 const admissionSchema = Joi.object({
@@ -47,7 +50,12 @@ const admissionSchema = Joi.object({
             photo: Joi.string().allow(""),
             transport: Joi.object({
                 required: Joi.boolean(),
-                route: Joi.string().allow("")
+                route: Joi.string().allow("", null),
+                route_id: Joi.string().allow("", null),
+                stoppage: Joi.string().allow("", null),
+                trip_type: Joi.string().valid("Both", "Pickup", "Drop").default("Both"),
+                monthly_fee: Joi.number().min(0).allow(null, ""),
+                waiver_percent: Joi.number().min(0).max(100).default(0),
             }).optional(),
             hostel: Joi.object({
                 required: Joi.boolean(),
@@ -125,20 +133,28 @@ const createAdmission = async (req, res) => {
                     { $set: { ...payload.guardian, updated_at: Date.now() } }
                 );
             }
-        } else {
-            // Create User for Guardian
-            const guardianPassword = await authService.hashPassword(payload.guardian.contact);
-            const guardianUser = await db.collection("users").insertOne({
-                username: payload.guardian.contact,
-                email: payload.guardian.email || "",
-                password: guardianPassword,
-                role: "parent",
-                madrasa_id: madrasaId,
-                created_at: Date.now(),
-                updated_at: Date.now()
-            });
 
-            guardianUserId = guardianUser.insertedId;
+            if (!guardianUserId) {
+                guardianUserId = await authService.ensureGuardianUser(db, {
+                    contact: existingGuardian.contact || payload.guardian.contact,
+                    email: existingGuardian.email || payload.guardian.email,
+                    madrasaId,
+                    referenceId: guardianId
+                });
+                if (guardianUserId) {
+                    await db.collection("parents").updateOne(
+                        { _id: guardianId },
+                        { $set: { userId: guardianUserId, updated_at: Date.now() } }
+                    );
+                }
+            }
+        } else {
+            // Create User for Guardian (username & default password = contact)
+            guardianUserId = await authService.ensureGuardianUser(db, {
+                contact: payload.guardian.contact,
+                email: payload.guardian.email,
+                madrasaId
+            });
 
             // Create new Guardian Profile
             const guardianData = {
@@ -153,7 +169,12 @@ const createAdmission = async (req, res) => {
             guardianId = newGuardian.insertedId;
 
             // Link user back to profile
-            await db.collection("users").updateOne({ _id: guardianUserId }, { $set: { reference_id: guardianId } });
+            if (guardianUserId) {
+                await db.collection("users").updateOne(
+                    { _id: guardianUserId },
+                    { $set: { reference_id: guardianId } }
+                );
+            }
         }
 
         // 2. Create Students
@@ -217,6 +238,10 @@ const createAdmission = async (req, res) => {
                 { $set: { reference_id: studentIds[i] } }
             );
             await syncStudentBoardingFromAdmission(db, req.user.madrasa_id, {
+                _id: studentIds[i],
+                ...studentDocs[i],
+            });
+            await syncStudentTransportFromAdmission(db, req.user.madrasa_id, {
                 _id: studentIds[i],
                 ...studentDocs[i],
             });
@@ -290,6 +315,7 @@ const updateAdmission = async (req, res) => {
                     });
                     if (updatedStudent) {
                         await syncStudentBoardingFromAdmission(db, req.user.madrasa_id, updatedStudent);
+                        await syncStudentTransportFromAdmission(db, req.user.madrasa_id, updatedStudent);
                     }
                 }
             }
@@ -399,8 +425,12 @@ const deleteAdmission = async (req, res) => {
         // Delete student record
         await db.collection("students").deleteOne({ _id: studentId });
 
-        // Delete associated boarding record
+        // Delete associated boarding & transport records
         await db.collection("boarding_students").deleteMany({
+            student_id: studentId.toString(),
+            madrasa_id: getMadrasaFilter(req.user.madrasa_id),
+        });
+        await db.collection("transport_students").deleteMany({
             student_id: studentId.toString(),
             madrasa_id: getMadrasaFilter(req.user.madrasa_id),
         });

@@ -365,7 +365,7 @@ const getBoardingStudents = async (req, res) => {
   try {
     const { db } = await mongoConnect();
     const madrasaFilter = getMadrasaFilter(req.user.madrasa_id);
-    const { residential_type, status, search } = req.query;
+    const { residential_type, status, class_name, search } = req.query;
 
     const query = { madrasa_id: madrasaFilter };
     if (residential_type && residential_type !== "all") {
@@ -373,6 +373,9 @@ const getBoardingStudents = async (req, res) => {
     }
     if (status && status !== "all") {
       query.status = status;
+    }
+    if (class_name && class_name !== "all") {
+      query.class_name = class_name;
     }
     if (search) {
       query.$or = [

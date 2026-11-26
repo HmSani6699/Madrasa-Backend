@@ -459,7 +459,8 @@ const routeDefinitions = [
   ["/api/contact", "contact"],
   ["/api/additional-services", "additionalService"],
   ["/api/tutorial-videos", "tutorialVideo"],
-  ["/api/boarding", "boarding"]
+  ["/api/boarding", "boarding"],
+  ["/api/transport", "transport"]
 ];
 
 /* =========================

@@ -6,6 +6,7 @@ const validate = require(`${root}/middleware/validate`);
 
 const mongo = require(`${root}/services/mongo-crud`);
 const mongoConnect = require(`${root}/services/mongo-connect`);
+const authService = require(`${root}/services/auth.service`);
 
 // Joi Schema for Parent (Guardian)
 const parentSchema = Joi.object({
@@ -124,6 +125,8 @@ const getParentStudents = async (req, res) => {
 const createParent = async (req, res) => {
   const { db, client } = await mongoConnect();
   try {
+    const madrasaId = req.user.madrasa_id ? new ObjectId(req.user.madrasa_id) : null;
+
     // Check for duplicate contact within same madrasa
     const existing = await mongo.fetchOne(db, "parents", {
       contact: req.body.contact,
@@ -135,12 +138,31 @@ const createParent = async (req, res) => {
 
     const parentData = {
       ...req.body,
-      madrasa_id: req.user.madrasa_id ? new ObjectId(req.user.madrasa_id) : null,
+      madrasa_id: madrasaId,
       created_at: Date.now(),
       updated_at: Date.now()
     };
 
     const parent = await mongo.insertOne(db, "parents", parentData);
+    if (!parent) {
+      return res.status(500).json({ success: false, message: "Failed to create parent" });
+    }
+
+    const guardianUserId = await authService.ensureGuardianUser(db, {
+      contact: req.body.contact,
+      email: req.body.email,
+      madrasaId,
+      referenceId: parent._id
+    });
+
+    if (guardianUserId) {
+      await db.collection("parents").updateOne(
+        { _id: parent._id },
+        { $set: { userId: guardianUserId } }
+      );
+      parent.userId = guardianUserId;
+    }
+
     res.status(201).json({ success: true, data: parent });
   } catch (error) {
     console.log(error);
