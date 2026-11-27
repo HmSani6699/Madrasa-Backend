@@ -6,6 +6,18 @@ const { ObjectId } = require("mongodb");
 
 const mongo = require(`${root}/services/mongo-crud`);
 const mongoConnect = require(`${root}/services/mongo-connect`);
+const authMiddleware = require(`${root}/middleware/authenticate`);
+const tenantMiddleware = require(`${root}/middleware/tenantMiddleware`);
+
+router.use(authMiddleware);
+router.use(tenantMiddleware);
+
+const getMadrasaFilter = (madrasaId) => {
+  if (!madrasaId) return madrasaId;
+  return ObjectId.isValid(madrasaId)
+    ? { $in: [madrasaId.toString(), new ObjectId(madrasaId)] }
+    : madrasaId;
+};
 
 // Joi Schema
 const transactionSchema = Joi.object({
@@ -23,7 +35,7 @@ const transactionSchema = Joi.object({
 const getAllTransactions = async (req, res) => {
   const { db, client } = await mongoConnect();
   try {
-    const query = { madrasa_id: req.user.madrasa_id };
+    const query = { madrasa_id: getMadrasaFilter(req.user.madrasa_id) };
     if (req.query.account_id) query.account_id = req.query.account_id;
     if (req.query.type) query.type = req.query.type;
     if (req.query.category) query.category = req.query.category;

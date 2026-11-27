@@ -460,7 +460,10 @@ const routeDefinitions = [
   ["/api/additional-services", "additionalService"],
   ["/api/tutorial-videos", "tutorialVideo"],
   ["/api/boarding", "boarding"],
-  ["/api/transport", "transport"]
+  ["/api/transport", "transport"],
+  ["/api", "donation"],
+  ["/api", "ledgerEntry"],
+  ["/api/accounting-reports", "accountingReport"]
 ];
 
 /* =========================
