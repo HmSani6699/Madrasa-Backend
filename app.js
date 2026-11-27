@@ -461,6 +461,7 @@ const routeDefinitions = [
   ["/api/tutorial-videos", "tutorialVideo"],
   ["/api/boarding", "boarding"],
   ["/api/transport", "transport"],
+  ["/api/hifz", "hifz"],
   ["/api", "donation"],
   ["/api", "ledgerEntry"],
   ["/api/accounting-reports", "accountingReport"]
