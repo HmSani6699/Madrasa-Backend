@@ -95,31 +95,170 @@ const normalizePhone = (phone) => {
   return cleaned.length >= 10 ? cleaned : "";
 };
 
+const formatBdPhone = (phone) => {
+  const cleaned = normalizePhone(phone).replace(/^\+/, "");
+  if (!cleaned) return "";
+  if (/^01\d{9}$/.test(cleaned)) return `88${cleaned}`;
+  if (/^1\d{9}$/.test(cleaned)) return `880${cleaned}`;
+  return cleaned;
+};
+
+const PROVIDER_DEFAULT_URLS = {
+  bulksmsbd: "http://bulksmsbd.net/api/smsapi",
+  alphasms: "https://api.sms.net.bd/sendsms",
+  greenweb: "http://api.greenweb.com.bd/api.php",
+  sslwireless: "https://smsplus.sslwireless.com/api/v3/send-sms",
+};
+
+const buildGatewayRequest = ({ provider, gatewayUrl, method, apiKey, senderId, to, message, smsType }) => {
+  const formattedPhone = formatBdPhone(to);
+
+  if (provider === "bulksmsbd") {
+    return {
+      method: "POST",
+      url: gatewayUrl || PROVIDER_DEFAULT_URLS.bulksmsbd,
+      data: {
+        api_key: apiKey,
+        type: "text",
+        number: formattedPhone,
+        senderid: senderId,
+        message,
+      },
+      isSuccess: (resData) =>
+        Number(resData?.response_code) === 202 || resData?.success_message != null,
+    };
+  }
+
+  if (provider === "alphasms") {
+    const payload = {
+      api_key: apiKey,
+      msg: message,
+      to: formattedPhone,
+    };
+    if (senderId) payload.sender_id = senderId;
+    return {
+      method: "POST",
+      url: gatewayUrl || PROVIDER_DEFAULT_URLS.alphasms,
+      data: payload,
+      isSuccess: (resData) => Number(resData?.error) === 0,
+    };
+  }
+
+  if (provider === "greenweb") {
+    return {
+      method: "POST",
+      url: gatewayUrl || PROVIDER_DEFAULT_URLS.greenweb,
+      params: {
+        token: apiKey,
+        to: formattedPhone,
+        message,
+        json: 1,
+      },
+      isSuccess: (resData) => {
+        if (Array.isArray(resData)) {
+          return resData.every((item) => String(item?.status || "").toUpperCase() === "SENT");
+        }
+        return typeof resData === "string"
+          ? resData.trim().toLowerCase().startsWith("ok:")
+          : Boolean(resData?.status === "SENT");
+      },
+    };
+  }
+
+  if (provider === "sslwireless") {
+    return {
+      method: "POST",
+      url: gatewayUrl || PROVIDER_DEFAULT_URLS.sslwireless,
+      data: {
+        api_token: apiKey,
+        sid: senderId,
+        msisdn: formattedPhone,
+        sms: message,
+        csms_id: `${Date.now()}${Math.floor(Math.random() * 1000)}`,
+      },
+      isSuccess: (resData) =>
+        String(resData?.status || "").toUpperCase() === "SUCCESS" ||
+        Number(resData?.status_code) === 200,
+    };
+  }
+
+  // Generic/custom REST gateway driven entirely by .env
+  const resolvedMethod = (method || "POST").toUpperCase() === "GET" ? "GET" : "POST";
+  const payload = {
+    api_key: apiKey,
+    senderid: senderId,
+    number: formattedPhone,
+    message,
+    type: smsType,
+  };
+
+  return {
+    method: resolvedMethod,
+    url: gatewayUrl,
+    ...(resolvedMethod === "GET" ? { params: payload } : { data: payload }),
+    isSuccess: (resData) => {
+      if (resData && typeof resData === "object") {
+        if (resData.success === false || resData.error === true) return false;
+        if (typeof resData.error === "number" && resData.error !== 0) return false;
+      }
+      return true;
+    },
+  };
+};
+
 /**
- * Optional external SMS gateway hook.
- * If SMS_GATEWAY_URL is configured in .env, dispatches HTTP request;
- * otherwise operates in simulated mode for safe local development.
+ * Env-driven external SMS gateway dispatcher.
+ * Supports presets (bulksmsbd, alphasms, greenweb, sslwireless) and custom REST endpoints.
+ * Falls back to simulated mode unless a gateway URL (or preset) and API key are configured.
  */
 const sendViaGateway = async ({ to, message, smsType }) => {
-  const gatewayUrl = process.env.SMS_GATEWAY_URL;
-  if (!gatewayUrl) {
-    return { ok: true, mode: "simulated", providerResponse: "Gateway URL not configured; logged locally" };
+  const provider = (process.env.SMS_GATEWAY_PROVIDER || "custom").trim().toLowerCase();
+  const gatewayUrl = (process.env.SMS_GATEWAY_URL || "").trim();
+  const apiKey = (process.env.SMS_GATEWAY_API_KEY || "").trim();
+  const senderId = (process.env.SMS_GATEWAY_SENDER_ID || "").trim();
+  const method = (process.env.SMS_GATEWAY_METHOD || "POST").trim();
+
+  const effectiveUrl = gatewayUrl || PROVIDER_DEFAULT_URLS[provider] || "";
+  if (!effectiveUrl || !apiKey) {
+    return {
+      ok: true,
+      mode: "simulated",
+      providerResponse: "SMS gateway credentials not set in .env; logged locally",
+    };
   }
 
   try {
-    const apiKey = process.env.SMS_GATEWAY_API_KEY || "";
-    const senderId = process.env.SMS_GATEWAY_SENDER_ID || "";
-    const response = await axios.post(
-      gatewayUrl,
-      {
-        api_key: apiKey,
-        senderid: senderId,
-        number: to,
-        message,
-        type: smsType,
-      },
-      { timeout: 5000 }
-    );
+    const reqConfig = buildGatewayRequest({
+      provider,
+      gatewayUrl: effectiveUrl,
+      method,
+      apiKey,
+      senderId,
+      to,
+      message,
+      smsType,
+    });
+
+    const response = await axios({
+      method: reqConfig.method,
+      url: reqConfig.url,
+      ...(reqConfig.data ? { data: reqConfig.data } : {}),
+      ...(reqConfig.params ? { params: reqConfig.params } : {}),
+      timeout: 8000,
+    });
+
+    const accepted = reqConfig.isSuccess(response.data);
+    if (!accepted) {
+      return {
+        ok: false,
+        mode: "failed",
+        error:
+          typeof response.data === "string"
+            ? response.data
+            : JSON.stringify(response.data || "Gateway rejected SMS"),
+      };
+    }
+
     return { ok: true, mode: "sent", providerResponse: response.data };
   } catch (error) {
     return { ok: false, mode: "failed", error: error.message };
@@ -410,4 +549,7 @@ module.exports = {
   dispatchSmsBatch,
   triggerAttendanceSms,
   getBangladeshDateStr,
+  formatBdPhone,
+  buildGatewayRequest,
+  sendViaGateway,
 };

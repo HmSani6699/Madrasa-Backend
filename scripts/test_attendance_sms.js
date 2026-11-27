@@ -4,6 +4,8 @@ const {
   getMadrasaSmsSettings,
   triggerAttendanceSms,
   getBangladeshDateStr,
+  formatBdPhone,
+  buildGatewayRequest,
 } = require("../services/sms.service");
 
 const createMockDb = ({ madrasa, students, parents, rates }) => {
@@ -211,6 +213,34 @@ const run = async () => {
     });
     assert.strictEqual(res.sentCount, 2);
     assert.strictEqual(db.state.sms_logs.length, 2);
+  }
+
+  // 7. Gateway phone formatting & provider payload builders
+  {
+    assert.strictEqual(formatBdPhone("01711-111111"), "8801711111111");
+    assert.strictEqual(formatBdPhone("+8801812345678"), "8801812345678");
+
+    const bulkReq = buildGatewayRequest({
+      provider: "bulksmsbd",
+      apiKey: "k1",
+      senderId: "s1",
+      to: "01711111111",
+      message: "Hello",
+    });
+    assert.strictEqual(bulkReq.data.number, "8801711111111");
+    assert.strictEqual(bulkReq.isSuccess({ response_code: 202 }), true);
+    assert.strictEqual(bulkReq.isSuccess({ response_code: 1002 }), false);
+
+    const sslReq = buildGatewayRequest({
+      provider: "sslwireless",
+      apiKey: "tok",
+      senderId: "SID",
+      to: "01711111111",
+      message: "Hello",
+    });
+    assert.strictEqual(sslReq.data.msisdn, "8801711111111");
+    assert.strictEqual(sslReq.isSuccess({ status: "SUCCESS", status_code: 200 }), true);
+    assert.strictEqual(sslReq.isSuccess({ status: "FAILED", status_code: 400 }), false);
   }
 
   console.log("ALL ATTENDANCE AUTO-SMS UNIT TESTS PASSED!");
