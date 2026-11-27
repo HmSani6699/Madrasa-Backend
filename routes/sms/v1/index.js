@@ -1,13 +1,161 @@
 const router = require("express").Router();
 const root = process.cwd();
 const { ObjectId } = require("mongodb");
+const Joi = require("joi");
 const mongoConnect = require(`${root}/services/mongo-connect`);
 const authMiddleware = require(`${root}/middleware/authenticate`);
 const tenantMiddleware = require(`${root}/middleware/tenantMiddleware`);
+const validate = require(`${root}/middleware/validate`);
+const {
+  DEFAULT_ATTENDANCE_TEMPLATES,
+  VALID_ATTENDANCE_TRIGGERS,
+  getMadrasaSmsSettings,
+  getSmsRates,
+  dispatchSmsBatch,
+} = require(`${root}/services/sms.service`);
 
 // Apply protection and tenant check
 router.use(authMiddleware);
 router.use(tenantMiddleware);
+
+const smsSettingsSchema = Joi.object({
+  admission: Joi.boolean().required(),
+  fees: Joi.boolean().required(),
+  attendance: Joi.boolean().required(),
+  attendanceTrigger: Joi.string()
+    .valid(...VALID_ATTENDANCE_TRIGGERS)
+    .default("absent_only"),
+  attendanceTemplates: Joi.object({
+    Absent: Joi.string().trim().min(5).max(500).required(),
+    Late: Joi.string().trim().min(5).max(500).required(),
+    Present: Joi.string().trim().min(5).max(500).required(),
+  }).optional(),
+});
+
+// 0. Get & Update per-madrasa SMS Settings
+router.get("/sms/settings", async (req, res) => {
+  const madrasaId = req.user.madrasa_id && ObjectId.isValid(req.user.madrasa_id)
+    ? new ObjectId(req.user.madrasa_id)
+    : null;
+
+  if (!madrasaId) {
+    return res.status(400).json({ success: false, message: "Invalid Madrasa context" });
+  }
+
+  const { db } = await mongoConnect();
+  try {
+    const madrasa = await db.collection("madrasas").findOne({ _id: madrasaId });
+    if (!madrasa) {
+      return res.status(404).json({ success: false, message: "Madrasa not found" });
+    }
+
+    const rates = await getSmsRates(db);
+    const settings = getMadrasaSmsSettings(madrasa);
+
+    res.status(200).json({
+      success: true,
+      data: {
+        settings,
+        defaultTemplates: DEFAULT_ATTENDANCE_TEMPLATES,
+        balance: Number(madrasa.smsWalletBalance || 0),
+        rates: {
+          single: rates.singleSmsRate,
+          bulk: rates.bulkSmsRate,
+          masking: rates.maskingSmsRate,
+        },
+      },
+    });
+  } catch (error) {
+    console.error("Get SMS Settings Error:", error);
+    res.status(500).json({ success: false, message: "Internal server error" });
+  }
+});
+
+router.put("/sms/settings", validate(smsSettingsSchema), async (req, res) => {
+  const allowedRoles = ["admin", "mohtamim", "super_admin"];
+  if (!allowedRoles.includes(req.user.role)) {
+    return res.status(403).json({
+      success: false,
+      message: "Only Madrasa Admin or Mohtamim can update SMS settings",
+    });
+  }
+
+  const madrasaId = req.user.madrasa_id && ObjectId.isValid(req.user.madrasa_id)
+    ? new ObjectId(req.user.madrasa_id)
+    : null;
+
+  if (!madrasaId) {
+    return res.status(400).json({ success: false, message: "Invalid Madrasa context" });
+  }
+
+  const { db } = await mongoConnect();
+  try {
+    const madrasa = await db.collection("madrasas").findOne({ _id: madrasaId });
+    if (!madrasa) {
+      return res.status(404).json({ success: false, message: "Madrasa not found" });
+    }
+
+    const existing = getMadrasaSmsSettings(madrasa);
+    const nextSettings = {
+      admission: Boolean(req.body.admission),
+      fees: Boolean(req.body.fees),
+      attendance: Boolean(req.body.attendance),
+      attendanceTrigger: req.body.attendanceTrigger || existing.attendanceTrigger,
+      attendanceTemplates: {
+        Absent: req.body.attendanceTemplates?.Absent || existing.attendanceTemplates.Absent,
+        Late: req.body.attendanceTemplates?.Late || existing.attendanceTemplates.Late,
+        Present: req.body.attendanceTemplates?.Present || existing.attendanceTemplates.Present,
+      },
+      updated_at: new Date(),
+    };
+
+    await db.collection("madrasas").updateOne(
+      { _id: madrasaId },
+      { $set: { smsSettings: nextSettings, updated_at: new Date() } }
+    );
+
+    res.status(200).json({
+      success: true,
+      message: "SMS settings updated successfully",
+      data: { settings: nextSettings },
+    });
+  } catch (error) {
+    console.error("Update SMS Settings Error:", error);
+    res.status(500).json({ success: false, message: "Internal server error" });
+  }
+});
+
+// Get SMS delivery logs for this Madrasa
+router.get("/sms/logs", async (req, res) => {
+  const madrasaId = req.user.madrasa_id && ObjectId.isValid(req.user.madrasa_id)
+    ? new ObjectId(req.user.madrasa_id)
+    : null;
+
+  if (!madrasaId) {
+    return res.status(400).json({ success: false, message: "Invalid Madrasa context" });
+  }
+
+  const { db } = await mongoConnect();
+  try {
+    const query = { madrasaId };
+    if (req.query.category && ["attendance", "broadcast", "general"].includes(req.query.category)) {
+      query.category = req.query.category;
+    }
+
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 50, 1), 200);
+    const logs = await db
+      .collection("sms_logs")
+      .find(query)
+      .sort({ sentAt: -1 })
+      .limit(limit)
+      .toArray();
+
+    res.status(200).json({ success: true, data: logs });
+  } catch (error) {
+    console.error("Get SMS Logs Error:", error);
+    res.status(500).json({ success: false, message: "Internal server error" });
+  }
+});
 
 // 1. Submit Recharge Request (Manual payment verification, Min BDT 100)
 router.post("/sms/recharge-request", async (req, res) => {
@@ -219,49 +367,43 @@ router.post("/sms/broadcast", async (req, res) => {
       return res.status(400).json({ success: false, message: "No valid recipient phone numbers found" });
     }
 
-    // 3. Compute cost and check wallet balance
-    const totalSmsCount = uniquePhones.length;
-    const totalCost = Number((totalSmsCount * ratePerSms).toFixed(2));
-
-    const madrasa = await db.collection("madrasas").findOne({ _id: madrasaId });
-    const balance = madrasa?.smsWalletBalance || 0;
-
-    if (balance < totalCost) {
-      return res.status(400).json({
-        success: false,
-        message: `Insufficient wallet balance! This broadcast requires BDT ${totalCost}, but your current wallet balance is BDT ${balance}. Please recharge and try again.`
-      });
+    // 3. Dispatch via central SMS service (handles balance deduction, gateway hook, and logs)
+    const uniqueRecipients = [];
+    const seenPhones = new Set();
+    for (const log of logsToInsert) {
+      if (!seenPhones.has(log.phone)) {
+        seenPhones.add(log.phone);
+        uniqueRecipients.push({
+          to: log.phone,
+          recipientName: log.name,
+          message,
+        });
+      }
     }
 
-    // 4. Deduct BDT cost and log transactions
-    await db.collection("madrasas").updateOne(
-      { _id: madrasaId },
-      { $inc: { smsWalletBalance: -totalCost } }
-    );
-
-    // Save logs to database
-    const smsLogs = logsToInsert.filter(log => uniquePhones.includes(log.phone)).map(log => ({
+    const dispatchResult = await dispatchSmsBatch(db, {
       madrasaId,
-      recipientName: log.name,
-      to: log.phone,
-      message,
+      recipients: uniqueRecipients,
       smsType,
-      cost: ratePerSms,
-      sentAt: new Date()
-    }));
+      category: "broadcast",
+    });
 
-    if (smsLogs.length > 0) {
-      await db.collection("sms_logs").insertMany(smsLogs);
+    if (dispatchResult.skippedReason === "insufficient_balance") {
+      return res.status(400).json({
+        success: false,
+        message: `Insufficient wallet balance! This broadcast requires BDT ${dispatchResult.requiredCost}, but your current wallet balance is BDT ${dispatchResult.balance}. Please recharge and try again.`,
+      });
     }
 
     res.status(200).json({
       success: true,
-      message: `SMS broadcast sent successfully to ${totalSmsCount} recipients!`,
+      message: `SMS broadcast sent successfully to ${dispatchResult.sentCount} recipients!`,
       data: {
-        totalSent: totalSmsCount,
-        cost: totalCost,
-        remainingBalance: Number((balance - totalCost).toFixed(2))
-      }
+        totalSent: dispatchResult.sentCount,
+        failedCount: dispatchResult.failedCount || 0,
+        cost: dispatchResult.cost || 0,
+        remainingBalance: dispatchResult.remainingBalance ?? 0,
+      },
     });
   } catch (error) {
     console.error("SMS Broadcast Error:", error);
